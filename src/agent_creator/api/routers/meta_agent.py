@@ -1,8 +1,8 @@
 # src/my_project/api/routers/meta_agent.py
 from fastapi import APIRouter
-from schemas import MetaAgentInput
-from agent_creator.crew import MetaCrew
-from api.db_handler import save_crew_config
+from ..schemas import MetaAgentInput
+from src.agent_creator.crew import MetaCrew
+from ..db_handler import save_crew_config
 
 router = APIRouter()
 
