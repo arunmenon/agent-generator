@@ -15,8 +15,3 @@ class MetaAgentInput(BaseModel):
     user_cache: bool
     user_manager_llm: Optional[str] = None
 
-class CrewConfig(BaseModel):
-    crew: Dict[str, Any]
-    agents: List[Dict[str, Any]]
-    tasks: List[Dict[str, Any]]
-    input_schema_json: Dict[str, Any]
