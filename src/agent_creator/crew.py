@@ -1,3 +1,4 @@
+# crew.py
 from typing import Any, Dict
 from pydantic import BaseModel
 from crewai import Agent, Crew, Process, Task, LLM
@@ -26,8 +27,13 @@ class MetaCrew():
     def planner_agent(self) -> Agent:
         return Agent(
             role="Planning Architect",
-            goal="Analyze user requirements and produce a conceptual plan",
-            backstory="Expert at analyzing high-level needs and determining tasks and agent types.",
+            goal="Transform the provided user requirements into a well-structured conceptual plan including minimal, cohesive tasks and clearly defined agent roles.",
+            backstory=(
+                "A seasoned planning architect experienced in data enrichment and workflow "
+                "orchestration. Expert at analyzing high-level needs, determining logically "
+                "sequenced tasks, and identifying the necessary specialists. Ensures each task "
+                "is actionable, minimal, and described with purpose, complexity, and dependencies."
+            ),
             llm=self.llm,
             memory=True,
             verbose=False,
@@ -43,8 +49,15 @@ class MetaCrew():
     def schema_converter(self) -> Agent:
         return Agent(
             role="Schema Converter",
-            goal="Convert conceptual tasks and agents into a CrewAI schema",
-            backstory="Skilled in translating plans into final CrewAI schema-compliant configurations.",
+            goal=(
+                "Convert the conceptual tasks and agents into a fully compliant, final CrewAI schema. "
+                "Validate all fields, correct any missing or malformed parts, and ensure a production-ready JSON output."
+            ),
+            backstory=(
+                "A meticulous schema architect trained to produce CrewAI-compliant configurations. "
+                "Understands every required field and ensures all tasks and agents are fully defined. "
+                "Fills missing fields logically, removes extraneous info, and returns only perfected JSON."
+            ),
             llm=self.llm,
             memory=True,
             verbose=False,
@@ -58,8 +71,22 @@ class MetaCrew():
 
     @task
     def gather_user_requirements_task(self) -> Task:
-        # Only this task needs to use the user inputs, so we will still use format.
         description = """
+Below are user inputs. Extract them and produce a strictly formatted JSON with the following keys:
+- description (string)
+- inputDescription (string)
+- outputDescription (string)
+- tools (array of strings)
+- process (string)
+- planning (boolean)
+- knowledge (boolean)
+- humanInputTasks (boolean)
+- memory (boolean)
+- cache (boolean)
+- managerLLM (string or null)
+
+Do not add extra commentary. Return only JSON. Ensure correct JSON syntax.
+
 User Description: {user_description}
 User Input Description: {user_input_description}
 User Output Description: {user_output_description}
@@ -71,50 +98,51 @@ Human Input Tasks: {user_human_input_tasks}
 Memory: {user_memory}
 Cache: {user_cache}
 Manager LLM: {user_manager_llm}
-
-Summarize these into a structured JSON object. No extra text, just JSON.
 """
-        # This task uses placeholders from inputs, so it will be interpolated at runtime by CrewAI.
         return Task(
             description=description,
-            expected_output="A JSON object with user's high-level requirements.",
+            expected_output="A JSON object with user's requirements.",
             agent=self.planner_agent()
         )
 
     @task
     def plan_tasks_and_agents_task(self) -> Task:
-        # This task does not rely on user input placeholders anymore.
-        # Replace {{output}} with double braces to avoid format issues.
+        # Double braces around JSON braces
         description = """
 Given these user requirements:
 {{output}}
 
-(Example in a retail e-commerce context, like Walmart's product catalog)
-If user requirements involve "Enhancing product data quality for the Walmart e-commerce catalog", conceptual tasks might be:
-- Extract product attributes from vendor feeds
-- Standardize and enrich product titles and descriptions
-- Enhance and validate product images
-- Map product attributes to internal Walmart taxonomy
-- Validate data consistency and completeness
-- Perform A/B testing to measure improvements
-
-Required agent types might be:
-- Data Curator (for extracting and structuring product attributes)
-- Content Specialist (for refining titles and descriptions)
-- Image Analyst (for improving and validating product images)
-- Taxonomy Specialist (for mapping attributes to the internal taxonomy)
-- QA Engineer (for checking data consistency and completeness)
-- Data Analyst (for conducting and evaluating A/B tests)
-
-Now, based on the provided user requirements above:
-
-Determine:
-- Conceptual tasks needed
-- Required agent types
-
-Return JSON with "plannedTasks" and "requiredAgentTypes".
+**INSTRUCTIONS:**
+- Analyze requirements and determine conceptual tasks. Each task must have:
+  - name
+  - purpose (short description)
+  - dependencies (array, can be empty)
+  - complexity (Low/Medium/High)
+- Determine required agent types. Each agent type must have:
+  - role (one-liner)
+  - goal (one-liner)
+  - backstory (brief background, domain-relevant)
+- Make tasks minimal and actionable, logically sequenced. Agents must be distinct and domain-appropriate.
+- Return strictly JSON:
+{{
+  "plannedTasks": [
+    {{
+      "name": "TaskNameExample",
+      "purpose": "short purpose",
+      "dependencies": [],
+      "complexity": "Low"
+    }}
+  ],
+  "requiredAgentTypes": [
+    {{
+      "role": "AgentRoleExample",
+      "goal": "Goal line",
+      "backstory": "Brief backstory"
+    }}
+  ]
+}}
+No extraneous commentary.
 """
-        # No .format() call needed because we do not rely on inputs here.
         return Task(
             description=description,
             expected_output="Conceptual plan in JSON.",
@@ -124,20 +152,23 @@ Return JSON with "plannedTasks" and "requiredAgentTypes".
 
     @task
     def assemble_schema_task(self) -> Task:
-        # Again, double braces around "crew", "agents", etc. to avoid format treating them as placeholders.
+        # Double braces for JSON
         description = """
-From this conceptual plan:
+Given this conceptual plan:
 {{output}}
 
-Produce CrewAI schema:
+**INSTRUCTIONS:**
+- Convert into a CrewAI schema:
 {{
   "crew": {{}},
   "agents": [],
   "tasks": [],
   "input_schema_json": {{}}
 }}
-
-No code blocks, just return JSON. Fill missing fields if needed.
+- Fill all missing fields logically. No code blocks, only JSON.
+- Ensure tasks and agents reflect the conceptual plan accurately.
+- Include all necessary fields for crew, agents, and tasks.
+- No extra commentary, just final JSON.
 """
         return Task(
             description=description,
@@ -149,15 +180,18 @@ No code blocks, just return JSON. Fill missing fields if needed.
 
     @task
     def refine_and_output_final_config_task(self) -> Task:
+        # Double braces for JSON
         description = """
 Given this draft config:
 {{output}}
 
-Refine to ensure perfect schema compliance:
-- Ensure crew, agents, tasks, input_schema_json present.
-- Agents have role, goal, backstory.
-- Tasks have name, description, expected_output, agent.
-Return final JSON only.
+**INSTRUCTIONS:**
+- Refine and ensure perfect CrewAI compliance. Final JSON only.
+- Crew, agents, tasks, input_schema_json must be present.
+- Each agent: must have role, goal, backstory.
+- Each task: must have name, description, expected_output, agent, human_input, context_tasks.
+- Remove placeholders or irrelevant details.
+- Return only the final refined JSON.
 """
         return Task(
             description=description,
