@@ -1,4 +1,5 @@
-# crew.py
+# src/agent_creator/crew.py
+
 from typing import Any, Dict
 from pydantic import BaseModel
 from crewai import Agent, Crew, Process, Task, LLM
@@ -51,7 +52,7 @@ class MetaCrew():
             role="Schema Converter",
             goal=(
                 "Convert the conceptual tasks and agents into a fully compliant, final CrewAI schema. "
-                "Validate all fields, correct any missing or malformed parts, and ensure a production-ready JSON output."
+                "Validate fields and ensure each agent has a 'name' as well, matching any tasks referencing it."
             ),
             backstory=(
                 "A meticulous schema architect trained to produce CrewAI-compliant configurations. "
@@ -186,12 +187,12 @@ Given this draft config:
 {{output}}
 
 **INSTRUCTIONS:**
-- Refine and ensure perfect CrewAI compliance. Final JSON only.
-- Crew, agents, tasks, input_schema_json must be present.
-- Each agent: must have role, goal, backstory.
-- Each task: must have name, description, expected_output, agent, human_input, context_tasks.
-- Remove placeholders or irrelevant details.
-- Return only the final refined JSON.
+1. Ensure "crew", "agents", "tasks", and "input_schema_json" are present.
+2. **For each agent**: must include "name", "role", "goal", and "backstory".
+3. **For each task**: must have "name", "description", "expected_output", "agent", "human_input", and "context_tasks".
+4. The "agent" field in each task must match an agent's "name" exactly.
+5. Remove placeholders or irrelevant details.
+6. Return only the final refined JSON, no extra commentary or code blocks.
 """
         return Task(
             description=description,

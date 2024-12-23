@@ -1,4 +1,5 @@
 # src/my_project/api/db_handler.py
+
 import sqlite3
 import json
 import os
@@ -53,6 +54,10 @@ def init_db():
     conn.close()
 
 def save_crew_config(config: dict):
+    """
+    Persists the final config into the DB.
+    Now with an extra validation step to ensure each task's agent is present in the 'agents' array.
+    """
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
 
@@ -70,6 +75,28 @@ def save_crew_config(config: dict):
     user_knowledge = crew_data.get("user_knowledge", False)
     user_human_input_tasks = crew_data.get("user_human_input_tasks", False)
 
+    # ---------------------------------------------------
+    # 1. Validation: Ensure each task.agent references some agent["name"] in the config
+    # ---------------------------------------------------
+    agent_names = {agent.get("name") for agent in agents if agent.get("name")}
+    # If any agent is missing a "name" field, it won't be in agent_names.
+
+    for task in tasks:
+        task_agent = task.get("agent")
+        if not task_agent:
+            raise ValueError(
+                f"Task '{task.get('name','<unnamed>')}' has no 'agent' field."
+            )
+        if task_agent not in agent_names:
+            raise ValueError(
+                f"Task '{task.get('name','<unnamed>')}' references agent '{task_agent}', "
+                "which is not present in the 'agents' list."
+            )
+    # If all tasks pass, we can safely proceed to insertion.
+
+    # ---------------------------------------------------
+    # 2. Insert into crew_metadata
+    # ---------------------------------------------------
     c.execute("""
     INSERT INTO crew_metadata (crew_name, process, input_schema_json, planning, manager_llm, user_memory, user_cache, user_knowledge, user_human_input_tasks)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -86,13 +113,16 @@ def save_crew_config(config: dict):
     ))
     crew_id = c.lastrowid
 
+    # ---------------------------------------------------
+    # 3. Insert agents
+    # ---------------------------------------------------
     for agent in agents:
         c.execute("""
         INSERT INTO agent (crew_id, name, role, goal, llm, tools_json, memory, cache)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             crew_id,
-            agent.get("name"),
+            agent.get("name"),   # crucial for agent-task matching
             agent.get("role"),
             agent.get("goal"),
             agent.get("llm"),
@@ -101,6 +131,9 @@ def save_crew_config(config: dict):
             agent.get("cache", False)
         ))
 
+    # ---------------------------------------------------
+    # 4. Insert tasks
+    # ---------------------------------------------------
     for task in tasks:
         c.execute("""
         INSERT INTO task (crew_id, name, description, expected_output, agent_name, human_input, context_tasks)
