@@ -9,7 +9,6 @@ DB_PATH = os.environ.get("DB_PATH", "crews.db")
 def init_db():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    # Create tables if not exist
     c.execute("""
     CREATE TABLE IF NOT EXISTS crew_metadata(
         crew_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -56,7 +55,9 @@ def init_db():
 def save_crew_config(config: dict):
     """
     Persists the final config into the DB.
-    Now with an extra validation step to ensure each task's agent is present in the 'agents' array.
+    'human_input' remains a boolean, but if the final JSON has a dictionary
+    in 'human_input', we move it to a sub-field (e.g. input_fields) and set
+    'human_input' = True.
     """
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
@@ -75,12 +76,8 @@ def save_crew_config(config: dict):
     user_knowledge = crew_data.get("user_knowledge", False)
     user_human_input_tasks = crew_data.get("user_human_input_tasks", False)
 
-    # ---------------------------------------------------
-    # 1. Validation: Ensure each task.agent references some agent["name"] in the config
-    # ---------------------------------------------------
+    # Validate each task's agent is in the 'agents' list
     agent_names = {agent.get("name") for agent in agents if agent.get("name")}
-    # If any agent is missing a "name" field, it won't be in agent_names.
-
     for task in tasks:
         task_agent = task.get("agent")
         if not task_agent:
@@ -92,20 +89,18 @@ def save_crew_config(config: dict):
                 f"Task '{task.get('name','<unnamed>')}' references agent '{task_agent}', "
                 "which is not present in the 'agents' list."
             )
-    # If all tasks pass, we can safely proceed to insertion.
 
-    # ---------------------------------------------------
-    # 2. Insert into crew_metadata
-    # ---------------------------------------------------
+    # Insert into crew_metadata (note we JSON-serialize manager_llm)
     c.execute("""
-    INSERT INTO crew_metadata (crew_name, process, input_schema_json, planning, manager_llm, user_memory, user_cache, user_knowledge, user_human_input_tasks)
+    INSERT INTO crew_metadata (crew_name, process, input_schema_json, planning, manager_llm,
+                               user_memory, user_cache, user_knowledge, user_human_input_tasks)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         crew_name,
         process,
         json.dumps(input_schema),
         planning,
-        manager_llm,
+        json.dumps(manager_llm),  # safe even if manager_llm is None/dict/string
         user_memory,
         user_cache,
         user_knowledge,
@@ -113,30 +108,47 @@ def save_crew_config(config: dict):
     ))
     crew_id = c.lastrowid
 
-    # ---------------------------------------------------
-    # 3. Insert agents
-    # ---------------------------------------------------
+    # Insert agents
     for agent in agents:
         c.execute("""
         INSERT INTO agent (crew_id, name, role, goal, llm, tools_json, memory, cache)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             crew_id,
-            agent.get("name"),   # crucial for agent-task matching
+            agent.get("name"),
             agent.get("role"),
             agent.get("goal"),
-            agent.get("llm"),
+            json.dumps(agent.get("llm")),
             json.dumps(agent.get("tools", [])),
             agent.get("memory", False),
             agent.get("cache", False)
         ))
 
-    # ---------------------------------------------------
-    # 4. Insert tasks
-    # ---------------------------------------------------
+    # Insert tasks
     for task in tasks:
+        # Step 1: retrieve 'human_input'
+        hi_value = task.get("human_input", False)
+        # Step 2: if it's a dict, move it to a sub-field (like input_fields)
+        if isinstance(hi_value, dict):
+            # set human_input -> True
+            # store hi_value in e.g. "input_fields" inside the context
+            hi_bool = True
+            input_fields_dict = hi_value
+        else:
+            # presumably just a boolean
+            hi_bool = bool(hi_value)
+            input_fields_dict = None
+
+        # Step 3: Possibly store that dict in the "context_tasks" or a new sub-field
+        context_list = task.get("context_tasks", [])
+        # If we have a dict for human_input, embed it
+        if input_fields_dict:
+            # You can store it in context. Up to you. We'll nest it as 'input_fields'
+            context_list.append({"input_fields": input_fields_dict})
+
         c.execute("""
-        INSERT INTO task (crew_id, name, description, expected_output, agent_name, human_input, context_tasks)
+        INSERT INTO task (crew_id, name, description, expected_output,
+                          agent_name, human_input, context_tasks)
         VALUES (?, ?, ?, ?, ?, ?, ?)
         """, (
             crew_id,
@@ -144,8 +156,8 @@ def save_crew_config(config: dict):
             task.get("description"),
             task.get("expected_output"),
             task.get("agent"),
-            task.get("human_input", False),
-            json.dumps(task.get("context_tasks", []))
+            hi_bool,                  # only True/False
+            json.dumps(context_list)  # store as JSON
         ))
 
     conn.commit()
