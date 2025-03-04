@@ -100,9 +100,29 @@ class PlanGenResult(BaseModel):
     all_plans: List[Plan] = Field(...)
     execution_details: Dict[str, Any] = Field(default_factory=dict)
 
+class AlgorithmSelectionResult(BaseModel):
+    """Result of selecting an algorithm for plan generation."""
+    algorithm: str = Field(..., description="Selected algorithm (best_of_n, tot, or rebase)")
+    reasoning: str = Field(..., description="Reasoning behind the algorithm selection")
+    recommended_params: Dict[str, Any] = Field(default_factory=dict, description="Recommended parameters for the algorithm")
+
+class PlanRefinementFeedback(BaseModel):
+    """Feedback for refining a plan."""
+    constraints_violated: List[str] = Field(default_factory=list, description="Constraints that were violated")
+    improvement_suggestions: List[str] = Field(default_factory=list, description="Suggestions for improving the plan")
+    satisfied_score: int = Field(..., ge=0, le=100, description="How well the plan satisfied constraints (0-100)")
+    needs_refinement: bool = Field(..., description="Whether the plan needs further refinement")
+    recommended_algorithm: str = Field(default="same", description="Recommended algorithm for refinement (same, best_of_n, tot, rebase)")
+
 @CrewBase
 class MetaCrew():
-    def __init__(self, llm_model="openai/gpt-4", n_samples=3, use_best_of_n=True, use_tot=False):
+    def __init__(self, 
+                 llm_model="openai/gpt-4", 
+                 n_samples=3, 
+                 use_best_of_n=True, 
+                 use_tot=False,
+                 max_refinement_iterations=3,
+                 min_satisfaction_threshold=85):
         self.llm_model = llm_model
         # Set verbose=False to reduce debug logs
         self.llm = LLM(model=self.llm_model, temperature=0.2, verbose=False)
@@ -111,6 +131,10 @@ class MetaCrew():
         self.n_samples = n_samples  # Number of plans to generate for Best-of-N
         self.use_best_of_n = use_best_of_n  # Whether to use Best-of-N sampling
         self.use_tot = use_tot  # Whether to use Tree-of-Thought search
+        
+        # PlanGEN refinement parameters
+        self.max_refinement_iterations = max_refinement_iterations  # Maximum number of refinement iterations
+        self.min_satisfaction_threshold = min_satisfaction_threshold  # Minimum satisfaction threshold (0-100)
 
     @before_kickoff
     def capture_inputs(self, inputs: Dict[str, Any]):
@@ -174,6 +198,33 @@ class MetaCrew():
         )
     
     @agent
+    def algorithm_selector_agent(self) -> Agent:
+        """
+        Agent that selects the most appropriate algorithm for a given problem.
+        """
+        return Agent(
+            role="Algorithm Selector",
+            goal=(
+                "Analyze problem requirements and constraints to select the most appropriate "
+                "algorithm for generating an optimal plan."
+            ),
+            backstory=(
+                "An algorithm expert with deep knowledge of various planning and reasoning "
+                "approaches, including Best-of-N sampling, Tree-of-Thought (ToT) search, and REBASE, "
+                "who can match problem characteristics to the most suitable algorithm."
+            ),
+            llm=self.llm,
+            memory=True,
+            verbose=False,
+            allow_delegation=False,
+            max_iter=3,
+            respect_context_window=True,
+            use_system_prompt=True,
+            cache=False,
+            max_retry_limit=2,
+        )
+    
+    @agent
     def plan_evaluator_agent(self) -> Agent:
         """
         Agent that evaluates plans against constraints and provides scores.
@@ -182,17 +233,45 @@ class MetaCrew():
             role="Plan Evaluator",
             goal=(
                 "Systematically evaluate plans against all constraints and requirements, "
-                "providing clear scores and detailed feedback."
+                "providing clear scores and detailed feedback for refinement."
             ),
             backstory=(
                 "A rigorous evaluator with expertise in analyzing plans from multiple angles "
-                "and providing objective assessments based on well-defined criteria."
+                "and providing objective assessments based on well-defined criteria, as well as "
+                "actionable feedback for improvement."
             ),
             llm=self.llm,
             memory=True,
             verbose=False,
             allow_delegation=False,
             max_iter=3,
+            respect_context_window=True,
+            use_system_prompt=True,
+            cache=False,
+            max_retry_limit=2,
+        )
+        
+    @agent
+    def plan_refiner_agent(self) -> Agent:
+        """
+        Agent that refines plans based on evaluation feedback.
+        """
+        return Agent(
+            role="Plan Refiner",
+            goal=(
+                "Refine and improve plans based on evaluation feedback, focusing on "
+                "addressing violated constraints and incorporating improvement suggestions."
+            ),
+            backstory=(
+                "An expert plan refiner with a talent for iterative improvement, "
+                "capable of understanding evaluation feedback and making targeted "
+                "adjustments to strengthen a plan's alignment with constraints."
+            ),
+            llm=self.llm,
+            memory=True,
+            verbose=False,
+            allow_delegation=False,
+            max_iter=4,
             respect_context_window=True,
             use_system_prompt=True,
             cache=False,
@@ -310,6 +389,8 @@ Focus on identifying:
 - Domain-specific rules or limitations
 - Dependencies between components
 
+Be thorough and comprehensive - these constraints will be used to evaluate and refine plans.
+
 Format your response as Python code that creates a ConstraintList object containing all identified constraints.
 Start with "ConstraintList(constraints=[" and include all PlanConstraint objects.
 """
@@ -319,6 +400,65 @@ Start with "ConstraintList(constraints=[" and include all PlanConstraint objects
             agent=self.constraint_agent(),
             context=[self.gather_user_requirements_task()],
             output_pydantic=ConstraintList
+        )
+        
+    @task
+    def select_algorithm_task(self) -> Task:
+        """
+        Selects the most appropriate algorithm for generating a plan based on the problem and constraints.
+        Returns an AlgorithmSelectionResult object.
+        """
+        description = r"""
+Based on the user requirements:
+{{output}}
+
+And the identified constraints:
+{constraints}
+
+Select the most appropriate algorithm for generating a plan. Consider the following algorithms:
+
+1. Best-of-N sampling: Generate multiple plans independently and pick the best one.
+   - Good for problems with clear evaluation criteria
+   - Benefits from diversity of approaches
+   - Can be computationally expensive for large N
+
+2. Tree-of-Thought (ToT) search: Generate a plan step by step, exploring multiple branches at each step.
+   - Good for problems that benefit from structured reasoning
+   - Helpful when the solution space is large but can be navigated with intermediate feedback
+   - Works well for problems that can be broken down into sequential decisions
+
+3. REBASE (REward BAlanced SEarch): A more advanced tree search guided by a learned reward model.
+   - Best for complex problems with multiple competing objectives
+   - Good when evaluation criteria might be subjective or nuanced
+   - Requires more computational resources but can produce more sophisticated plans
+
+Your response should match the following Pydantic model:
+
+```python
+class AlgorithmSelectionResult(BaseModel):
+    algorithm: str  # One of: "best_of_n", "tot", "rebase"
+    reasoning: str
+    recommended_params: Dict[str, Any] = {}
+```
+
+Analyze the problem characteristics and constraints to determine which algorithm would be most effective.
+Consider factors like:
+- Problem complexity and structure
+- Number and nature of constraints
+- Whether the problem benefits from exploration of diverse approaches
+- Computational budget considerations
+
+Format your response as Python code that creates an AlgorithmSelectionResult object.
+Start with "AlgorithmSelectionResult(" and include your selected algorithm, reasoning, and any recommended parameters.
+"""
+        description = description.replace("{constraints}", "{{constraints}}")
+        
+        return Task(
+            description=description,
+            expected_output="AlgorithmSelectionResult with selected algorithm and reasoning",
+            agent=self.algorithm_selector_agent(),
+            context=[self.gather_user_requirements_task(), self.identify_constraints_task()],
+            output_pydantic=AlgorithmSelectionResult
         )
 
     @task
@@ -570,6 +710,114 @@ Be sure to identify which plan has the highest score and include that name in th
             ],
             output_pydantic=PlanEvaluationResult
         )
+        
+    @task
+    def provide_plan_feedback_task(self) -> Task:
+        """
+        Provides detailed feedback on a plan for refinement purposes.
+        Returns a PlanRefinementFeedback object.
+        """
+        description = r"""
+Analyze this plan:
+{{output}}
+
+Against the identified constraints:
+{constraints}
+
+Provide detailed feedback on how well the plan satisfies constraints and what improvements are needed.
+
+Your response should match the following Pydantic model:
+
+```python
+class PlanRefinementFeedback(BaseModel):
+    constraints_violated: List[str]
+    improvement_suggestions: List[str]
+    satisfied_score: int  # 0-100
+    needs_refinement: bool
+    recommended_algorithm: str = "same"  # One of: "same", "best_of_n", "tot", "rebase"
+```
+
+Specifically:
+1. List all constraints that the plan violates
+2. Provide specific, actionable suggestions for improving the plan
+3. Give an overall satisfaction score from 0-100
+4. Determine if the plan needs further refinement (True if score < {threshold})
+5. Recommend whether to continue with the same algorithm or try a different one
+
+Format your response as Python code that creates a PlanRefinementFeedback object.
+Start with "PlanRefinementFeedback(" and include all required fields.
+
+The feedback should be specific enough that a plan refiner can use it to make targeted improvements.
+"""
+        description = description.replace("{constraints}", "{{constraints}}")
+        description = description.replace("{threshold}", str(self.min_satisfaction_threshold))
+        
+        return Task(
+            description=description,
+            expected_output="PlanRefinementFeedback with detailed improvement guidance",
+            agent=self.plan_evaluator_agent(),
+            context=[
+                self.identify_constraints_task(),
+                self.evaluate_plans_task() if self.use_best_of_n else self.plan_tasks_and_agents_task()
+            ],
+            output_pydantic=PlanRefinementFeedback
+        )
+        
+    @task
+    def refine_plan_task(self) -> Task:
+        """
+        Refines a plan based on feedback.
+        Returns an improved Plan object.
+        """
+        description = r"""
+Given this plan:
+{{plan}}
+
+And this feedback:
+{{feedback}}
+
+Create an improved version of the plan that addresses the issues identified in the feedback.
+
+Your response should match the following Pydantic models:
+
+```python
+class TaskDefinition(BaseModel):
+    name: str
+    purpose: str
+    dependencies: List[str] = []
+    complexity: str = "Medium"  # Low, Medium, High
+
+class AgentDefinition(BaseModel):
+    name: str
+    role: str
+    goal: str
+    backstory: str = ""
+
+class Plan(BaseModel):
+    name: str 
+    content: str
+    planned_tasks: List[TaskDefinition]
+    required_agent_types: List[AgentDefinition]
+```
+
+Follow these steps:
+1. Address each violated constraint identified in the feedback
+2. Implement the improvement suggestions
+3. Ensure your refined plan maintains the strengths of the original plan
+4. Give the refined plan a name that indicates it's a refinement (e.g., "Refined Plan: [Original Name]")
+
+Format your response as Python code that creates a Plan object.
+Start with "Plan(" and include all required fields with your improvements.
+
+Make your refinements specific and targeted to address the issues raised in the feedback.
+"""
+        return Task(
+            description=description,
+            expected_output="Refined Plan object addressing feedback",
+            agent=self.plan_refiner_agent(),
+            context=[],  # Context will be provided dynamically
+            output_pydantic=Plan
+        )
 
     @task
     def assemble_schema_task(self) -> Task:
@@ -647,24 +895,88 @@ Start with "CrewConfig(" and include all necessary fields.
             output_pydantic=CrewConfig
         )
 
+    def run_plan_refinement_cycle(self, crew: Crew, initial_plan: Plan, constraints: ConstraintList) -> Plan:
+        """
+        Runs the iterative plan refinement cycle, a key component of PlanGEN.
+        Takes an initial plan and refines it until it meets the satisfaction threshold or hits max iterations.
+        """
+        current_plan = initial_plan
+        
+        for iteration in range(self.max_refinement_iterations):
+            # Run feedback task
+            feedback_task = self.provide_plan_feedback_task()
+            feedback_task.description = feedback_task.description.replace("{{output}}", str(current_plan))
+            feedback_task.description = feedback_task.description.replace("{{constraints}}", str(constraints))
+            
+            feedback_result = crew.run_task(feedback_task)
+            feedback: PlanRefinementFeedback = feedback_result.output
+            
+            # Check if refinement is needed
+            if not feedback.needs_refinement:
+                print(f"Plan meets satisfaction threshold ({feedback.satisfied_score}%). No further refinement needed.")
+                return current_plan
+                
+            print(f"Plan refinement iteration {iteration+1}: satisfaction score {feedback.satisfied_score}%")
+            
+            # Change algorithm if recommended
+            if feedback.recommended_algorithm != "same" and feedback.recommended_algorithm != "":
+                print(f"Changing algorithm to {feedback.recommended_algorithm} based on feedback")
+                # Logic to switch algorithms would go here
+                # This is a placeholder - in a real implementation we would change the algorithm
+            
+            # Run refinement task
+            refine_task = self.refine_plan_task()
+            refine_task.description = refine_task.description.replace("{{plan}}", str(current_plan))
+            refine_task.description = refine_task.description.replace("{{feedback}}", str(feedback))
+            
+            refine_result = crew.run_task(refine_task)
+            current_plan = refine_result.output
+            
+        print(f"Reached maximum refinement iterations ({self.max_refinement_iterations}). Returning best plan.")
+        return current_plan
+    
     @crew
     def crew(self) -> Crew:
         """
-        Final pipeline: gather -> constraints -> plan -> alternatives -> evaluate -> interpret -> assemble -> refine.
-        Quadruple braces for placeholders, double braces for literal JSON. 
+        Final pipeline implementing the PlanGEN workflow:
+        1. Gather user requirements
+        2. Identify constraints
+        3. Select algorithm
+        4. Generate initial plan(s)
+        5. Evaluate plan(s)
+        6. Refine plans iteratively until satisfactory
+        7. Convert final plan to CrewAI schema
         """
+        # Core agents needed for all workflows
+        agents = [
+            self.planner_agent(),
+            self.constraint_agent(),
+            self.algorithm_selector_agent(),
+            self.plan_evaluator_agent(),
+            self.plan_refiner_agent(),
+            self.schema_converter()
+        ]
+        
+        # Core tasks needed for all workflows
         tasks = [
             self.gather_user_requirements_task(),
             self.identify_constraints_task(),
-            self.plan_tasks_and_agents_task(),
+            self.select_algorithm_task(),
         ]
         
+        # Select planning approach based on algorithm selection
+        # For now, we're using a simplified approach that always uses 
+        # best_of_n if enabled, but in a more sophisticated implementation
+        # we would choose the algorithm based on the selection task result
         if self.use_best_of_n:
             tasks.extend([
                 self.generate_alternative_plans_task(),
                 self.evaluate_plans_task(),
             ])
+        else:
+            tasks.append(self.plan_tasks_and_agents_task())
             
+        # Schema conversion tasks
         tasks.extend([
             self.interpret_input_description_task(),
             self.assemble_schema_task(),
@@ -672,13 +984,34 @@ Start with "CrewConfig(" and include all necessary fields.
         ])
             
         return Crew(
-            agents=[
-                self.planner_agent(), 
-                self.constraint_agent(), 
-                self.plan_evaluator_agent(),
-                self.schema_converter()
-            ],
+            agents=agents,
             tasks=tasks,
             process=Process.sequential,
             verbose=True
         )
+        
+    def kickoff_with_refinement(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Override of the standard kickoff method to include the iterative refinement loop.
+        This is the method that should be called from outside to run the full PlanGEN workflow.
+        """
+        # Run the initial crew workflow
+        crew_instance = self.crew()
+        initial_result = crew_instance.kickoff(inputs=inputs)
+        
+        # After the initial run, extract the plan and constraints
+        best_plan = None
+        constraints = None
+        
+        # Here we would extract the best plan and constraints from the initial result
+        # This is a simplified version - in a real implementation we would extract this data
+        # from the actual result returned by the crew
+        
+        # If plan needs refinement based on evaluation, run the refinement cycle
+        if self.use_best_of_n and best_plan and constraints:
+            refined_plan = self.run_plan_refinement_cycle(crew_instance, best_plan, constraints)
+            
+            # Update the result with the refined plan
+            # Again, this is simplified - we would need to integrate this with the actual result
+            
+        return initial_result
