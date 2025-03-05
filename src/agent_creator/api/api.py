@@ -2,7 +2,7 @@
 from fastapi import FastAPI
 from .db_handler import init_db
 from fastapi.middleware.cors import CORSMiddleware
-from .routers import meta_agent, crews
+from .routers import meta_agent, crews, flow
 from .services.crew_service import load_all_crews_from_db
 
 app = FastAPI()
@@ -16,6 +16,7 @@ app.add_middleware(
 
 app.include_router(meta_agent.router, prefix="/meta-agent", tags=["meta-agent"])
 app.include_router(crews.router, tags=["crews"])
+app.include_router(flow.router, tags=["flow"])
 
 @app.on_event("startup")
 def startup_event():
