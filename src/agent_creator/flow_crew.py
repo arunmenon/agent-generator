@@ -1,32 +1,88 @@
 import json
-from typing import List, Optional, Dict, Any, Union
-from pydantic import BaseModel
+from typing import List, Optional, Dict, Any, Union, Literal
+from pydantic import BaseModel, Field
 from crewai.flow.flow import Flow, listen, start
+from crewai import Crew, Agent, Task, Process
+from langchain.chat_models import ChatOpenAI
+from langchain.schema import HumanMessage
 
 # Import existing models
-from src.agent_creator.crew import CrewPlan, AgentDefinition, TaskDefinition
+from src.agent_creator.crew import AgentDefinition, TaskDefinition
 
+# Define CrewPlan model
+class CrewPlan:
+    """A plan for a crew with agents, tasks and process type."""
+    
+    def __init__(self, agents: List[AgentDefinition], tasks: List[TaskDefinition], process: str = "sequential"):
+        self.agents = agents
+        self.tasks = tasks
+        self.process = process
 
-class AgentState(BaseModel):
-    """State model for agent workflow processes."""
-    task_analysis: Optional[Dict[str, Any]] = None
-    algorithm_selection: Optional[Dict[str, Any]] = None
-    initial_plan: Optional[Dict[str, Any]] = None
-    evaluation: Optional[Dict[str, Any]] = None
-    refined_plan: Optional[Dict[str, Any]] = None
+# Define structured state models
+class AnalysisResult(BaseModel):
+    """Results from the Analysis Crew."""
+    constraints: List[str] = Field(default_factory=list)
+    requirements: List[str] = Field(default_factory=list)
+    complexity: int = Field(default=5)
+    domain_knowledge: List[str] = Field(default_factory=list)
+    time_sensitivity: Dict[str, Any] = Field(default_factory=dict)
+    success_criteria: List[str] = Field(default_factory=list)
+    recommended_process_type: str = Field(default="sequential")
+
+class PlanningResult(BaseModel):
+    """Results from the Planning Crew."""
+    selected_algorithm: str
+    algorithm_justification: str
+    candidate_plans: List[Dict[str, Any]] = Field(default_factory=list)
+    selected_plan: Dict[str, Any] = Field(default_factory=dict)
+    verification_score: int = Field(default=0)
+
+class ImplementationResult(BaseModel):
+    """Results from the Implementation Crew."""
+    agents: List[Dict[str, Any]] = Field(default_factory=list)
+    tasks: List[Dict[str, Any]] = Field(default_factory=list)
+    workflow: Dict[str, Any] = Field(default_factory=dict)
+    process_type: str = Field(default="sequential")
+    tools: List[Dict[str, Any]] = Field(default_factory=list)
+
+class EvaluationResult(BaseModel):
+    """Results from the Evaluation Crew."""
+    strengths: List[str] = Field(default_factory=list)
+    weaknesses: List[str] = Field(default_factory=list)
+    missing_elements: List[str] = Field(default_factory=list)
+    recommendations: List[str] = Field(default_factory=list)
+    overall_score: int = Field(default=0)
+    improvement_area: str = Field(default="")
+
+class MultiCrewState(BaseModel):
+    """State model for multi-crew workflow processes."""
+    analysis_result: Optional[AnalysisResult] = None
+    planning_result: Optional[PlanningResult] = None
+    implementation_result: Optional[ImplementationResult] = None
+    evaluation_result: Optional[EvaluationResult] = None
     final_plan: Optional[CrewPlan] = None
-    iteration_count: int = 0
-    feedback_history: List[Dict[str, Any]] = []
+    
+    # Iteration tracking
+    analysis_iterations: int = 0
+    planning_iterations: int = 0
+    implementation_iterations: int = 0
+    evaluation_iterations: int = 0
+    
+    # History tracking
+    iteration_history: List[Dict[str, Any]] = Field(default_factory=list)
 
 
-class MetaCrewFlow(Flow[AgentState]):
-    """Hierarchical flow implementation for creating a crew based on a user request."""
+class MultiCrewFlow(Flow[MultiCrewState]):
+    """Flow implementation that orchestrates multiple specialized crews."""
     
     # Configuration properties
     model: str = "gpt-4o"
     temperature: float = 0.7
     user_task: str = ""
     config: Dict[str, Any] = {}
+    
+    # LLM instances
+    llm: Any = None
     
     def __init__(self, user_task: str, config: Dict[str, Any] = None):
         """Initialize the flow with user task and configuration."""
@@ -35,99 +91,156 @@ class MetaCrewFlow(Flow[AgentState]):
         self.config = config or {}
     
     @start()
-    def analyze_requirements(self):
-        """Entry point that analyzes user requirements and task constraints."""
-        print(f"Starting MetaCrew Flow - ID: {self.state.id}")
+    def run_analysis_crew(self):
+        """Start the flow by running the Analysis Crew."""
+        print(f"Starting Multi-Crew Flow - ID: {self.state.id}")
+        print(f"Processing task: {self.user_task}")
         
-        # Initialize LLM and configuration
+        # Initialize LLM
         self._initialize_llm()
         
-        # Create analysis subtasks
-        task_analysis = self._analyze_task(self.user_task)
-        self.state.task_analysis = task_analysis
+        # Increment iteration counter
+        self.state.analysis_iterations += 1
         
-        # Select planning algorithm based on task complexity
-        algorithm_selection = self._select_planning_algorithm(task_analysis)
-        self.state.algorithm_selection = algorithm_selection
+        # Create and run the Analysis Crew
+        analysis_result = self._run_analysis_crew(self.user_task)
         
-        return {
-            "task_analysis": task_analysis,
-            "algorithm_selection": algorithm_selection
-        }
+        # Store in state
+        self.state.analysis_result = AnalysisResult(**analysis_result)
+        
+        print(f"Analysis complete. Complexity: {analysis_result['complexity']}")
+        print(f"Recommended process type: {analysis_result['recommended_process_type']}")
+        
+        return analysis_result
     
-    @listen(analyze_requirements)
-    def generate_initial_plan(self, analysis_results):
-        """Creates the initial plan based on the analysis results."""
-        task_analysis = analysis_results["task_analysis"]
-        algorithm_selection = analysis_results["algorithm_selection"]
+    @listen(run_analysis_crew)
+    def run_planning_crew(self, analysis_result):
+        """Run the Planning Crew with hierarchical process."""
+        # Increment iteration counter
+        self.state.planning_iterations += 1
         
-        # Generate the initial plan
-        initial_plan = self._create_initial_plan(
-            self.user_task,
-            task_analysis,
-            algorithm_selection
+        # Create and run the Planning Crew
+        planning_result = self._run_planning_crew(self.user_task, analysis_result)
+        
+        # Store in state
+        self.state.planning_result = PlanningResult(**planning_result)
+        
+        print(f"Planning complete. Selected algorithm: {planning_result['selected_algorithm']}")
+        print(f"Verification score: {planning_result['verification_score']}")
+        
+        return planning_result
+    
+    @listen(run_planning_crew)
+    def run_implementation_crew(self, planning_result):
+        """Run the Implementation Crew with sequential process."""
+        # Increment iteration counter
+        self.state.implementation_iterations += 1
+        
+        # Get analysis result from state
+        analysis_result = self.state.analysis_result.dict()
+        
+        # Create and run the Implementation Crew
+        implementation_result = self._run_implementation_crew(
+            self.user_task, 
+            analysis_result,
+            planning_result
         )
         
         # Store in state
-        self.state.initial_plan = initial_plan
-        return initial_plan
+        self.state.implementation_result = ImplementationResult(**implementation_result)
+        
+        print(f"Implementation complete. {len(implementation_result['agents'])} agents defined.")
+        print(f"Process type: {implementation_result['process_type']}")
+        
+        return implementation_result
     
-    @listen(generate_initial_plan)
-    def evaluate_and_refine(self, initial_plan):
-        """Evaluates the initial plan and initiates refinement if needed."""
-        # Evaluate the plan
-        evaluation = self._evaluate_plan(
+    @listen(run_implementation_crew)
+    def run_evaluation_crew(self, implementation_result):
+        """Run the Evaluation Crew with hierarchical process."""
+        # Increment iteration counter
+        self.state.evaluation_iterations += 1
+        
+        # Get previous results from state
+        analysis_result = self.state.analysis_result.dict()
+        planning_result = self.state.planning_result.dict()
+        
+        # Create and run the Evaluation Crew
+        evaluation_result = self._run_evaluation_crew(
             self.user_task,
-            initial_plan,
-            self.state.task_analysis
+            analysis_result,
+            planning_result,
+            implementation_result
         )
         
         # Store in state
-        self.state.evaluation = evaluation
+        self.state.evaluation_result = EvaluationResult(**evaluation_result)
+        
+        # Add to iteration history
+        self.state.iteration_history.append({
+            "iteration": len(self.state.iteration_history) + 1,
+            "analysis": analysis_result,
+            "planning": planning_result,
+            "implementation": implementation_result,
+            "evaluation": evaluation_result
+        })
+        
+        print(f"Evaluation complete. Overall score: {evaluation_result['overall_score']}")
         
         # Determine if refinement is needed
-        needs_refinement = evaluation["overall_score"] < 7
-        
-        if needs_refinement:
-            print(f"Plan needs refinement. Current score: {evaluation['overall_score']}")
-            refined_plan = self._refine_plan(
-                initial_plan,
-                evaluation,
-                self.state.task_analysis
-            )
-            self.state.refined_plan = refined_plan
-            self.state.iteration_count += 1
+        if evaluation_result['overall_score'] < 7 and sum([
+            self.state.analysis_iterations,
+            self.state.planning_iterations,
+            self.state.implementation_iterations
+        ]) < 9:  # Limit total iterations
+            # Determine which crew needs to refine based on improvement_area
+            improvement_area = evaluation_result['improvement_area']
             
-            # Add to feedback history
-            self.state.feedback_history.append({
-                "iteration": self.state.iteration_count,
-                "evaluation": evaluation,
-                "plan_before": initial_plan,
-                "plan_after": refined_plan
-            })
+            if improvement_area == "analysis":
+                print("Refinement needed in Analysis. Returning to Analysis Crew.")
+                return self.run_analysis_crew()
             
-            return {
-                "plan": refined_plan,
-                "evaluation": evaluation,
-                "is_refined": True
-            }
+            elif improvement_area == "planning":
+                print("Refinement needed in Planning. Returning to Planning Crew.")
+                return self.run_planning_crew(analysis_result)
+            
+            elif improvement_area == "implementation":
+                print("Refinement needed in Implementation. Returning to Implementation Crew.")
+                return self.run_implementation_crew(planning_result)
+            
+            else:
+                print("No specific refinement area identified. Proceeding with current results.")
+                return {
+                    "implementation": implementation_result,
+                    "evaluation": evaluation_result,
+                    "needs_refinement": False
+                }
         else:
-            print(f"Initial plan meets quality threshold. Score: {evaluation['overall_score']}")
+            if evaluation_result['overall_score'] >= 7:
+                print("Evaluation score meets threshold. Proceeding with current results.")
+            else:
+                print("Maximum iterations reached. Proceeding with best available results.")
+                
             return {
-                "plan": initial_plan,
-                "evaluation": evaluation,
-                "is_refined": False
+                "implementation": implementation_result,
+                "evaluation": evaluation_result,
+                "needs_refinement": False
             }
     
-    @listen(evaluate_and_refine)
-    def finalize_crew_config(self, refinement_result):
-        """Converts the final plan into executable crew configuration."""
-        final_plan_data = refinement_result["plan"]
-        evaluation = refinement_result["evaluation"]
+    @listen(run_evaluation_crew)
+    def finalize_crew_config(self, evaluation_data):
+        """Converts the final implementation into executable crew configuration."""
+        # Check if we're getting a refined result or the evaluation results
+        if isinstance(evaluation_data, dict) and "implementation" in evaluation_data:
+            implementation_result = evaluation_data["implementation"]
+            evaluation_result = evaluation_data["evaluation"]
+        else:
+            # This is a direct evaluation result from a refinement cycle
+            implementation_result = self.state.implementation_result.dict()
+            evaluation_result = evaluation_data
         
         # Convert to crew plan with agents and tasks
         agents = []
-        for agent_def in final_plan_data["agents"]:
+        for agent_def in implementation_result["agents"]:
             agents.append(
                 AgentDefinition(
                     name=agent_def["name"],
@@ -138,52 +251,66 @@ class MetaCrewFlow(Flow[AgentState]):
             )
         
         tasks = []
-        for task_def in final_plan_data["tasks"]:
+        for task_def in implementation_result["tasks"]:
             dependencies = task_def.get("dependencies", [])
             tasks.append(
                 TaskDefinition(
                     name=task_def["name"],
                     purpose=task_def["description"],
                     dependencies=dependencies,
-                    complexity="Medium"  # Default value, can be refined
+                    complexity=task_def.get("complexity", "Medium")
                 )
             )
         
-        crew_plan = CrewPlan(agents=agents, tasks=tasks)
+        # Create crew plan
+        crew_plan = CrewPlan(
+            agents=agents, 
+            tasks=tasks,
+            process=implementation_result.get("process_type", "sequential")
+        )
+        
+        # Store in state
         self.state.final_plan = crew_plan
+        
+        print("Crew configuration finalized.")
+        print(f"Agents: {len(agents)}, Tasks: {len(tasks)}")
+        print(f"Process type: {implementation_result.get('process_type', 'sequential')}")
         
         return crew_plan
     
-    # Helper methods to implement the actual functionality
-    def _initialize_llm(self):
-        """Initialize the language model with configuration."""
-        from langchain.chat_models import ChatOpenAI
-        
-        self.llm = ChatOpenAI(
-            base_url=self.config.get("api_base", None),
-            api_key=self.config.get("api_key", None),
-            model=self.config.get("model_name", self.model),
-            temperature=self.config.get("temperature", self.temperature),
-            streaming=False
-        )
+    # =====================================================================
+    # Crew implementation methods
+    # =====================================================================
     
-    def _analyze_task(self, user_task):
-        """Analyze the user task to extract constraints and requirements."""
+    def _run_analysis_crew(self, user_task):
+        """Run the Analysis Crew to analyze requirements."""
+        # This would normally create a CrewAI crew, but we'll simulate with direct LLM calls
         response = self._call_llm(f"""
-        Based on the following user task, identify the key constraints, requirements, and parameters
-        that will influence how we should structure our crew.
+        You are an Analysis Crew consisting of a Constraint Analyst, Requirements Engineer, and Domain Expert.
+        Analyze the following user task to extract key information.
 
         # User Task
         {user_task}
 
+        # Analysis Instructions
+        Work together to identify:
+        1. All explicit and implicit constraints
+        2. Core requirements for the solution
+        3. Complexity level (1-10)
+        4. Required domain knowledge
+        5. Time sensitivity
+        6. Success criteria
+        7. Recommended process type (sequential or hierarchical) based on task characteristics
+
         # Output Format
         Provide a JSON object with these fields:
-        - constraints: List of specific limitations or boundaries that the solution must respect
-        - requirements: List of all necessary elements that must be present in the solution
-        - complexity: Task complexity on a scale of 1-10
-        - domain_knowledge: Domains of expertise needed
+        - constraints: List of specific limitations or boundaries
+        - requirements: List of necessary elements
+        - complexity: Numeric rating (1-10)
+        - domain_knowledge: List of relevant domains
         - time_sensitivity: Object with is_critical (boolean) and reasoning (string)
-        - success_criteria: How will we know when the task is successfully completed
+        - success_criteria: List of measurable outcomes
+        - recommended_process_type: Either "sequential" or "hierarchical" with explanation
         """)
         
         # Parse response as JSON
@@ -197,28 +324,43 @@ class MetaCrewFlow(Flow[AgentState]):
                 "complexity": 5,
                 "domain_knowledge": [],
                 "time_sensitivity": {"is_critical": False, "reasoning": ""},
-                "success_criteria": []
+                "success_criteria": [],
+                "recommended_process_type": "sequential"
             }
     
-    def _select_planning_algorithm(self, task_analysis):
-        """Select planning algorithm based on task complexity and needs."""
+    def _run_planning_crew(self, user_task, analysis_result):
+        """Run the Planning Crew with hierarchical process."""
+        # This simulates a hierarchical planning crew with algorithm specialists
         response = self._call_llm(f"""
-        Based on the following task analysis, determine the most appropriate planning algorithm to use.
+        You are a Planning Crew with a hierarchical structure:
+        - Planning Manager (you): Oversees the planning process and selects specialists
+        - Best-of-N Generator: Creates multiple plans and selects the best
+        - Tree-of-Thoughts Agent: Explores multiple reasoning paths
+        - REBASE Agent: Recursively breaks down problems
+        - Verification Agent: Evaluates plan quality
+        
+        Based on the user task and analysis, determine the best planning approach and generate a solution.
 
-        # Task Analysis
-        {json.dumps(task_analysis, indent=2)}
+        # User Task
+        {user_task}
 
-        # Available Planning Algorithms
-        1. Best-of-N Planning: Generate multiple plans and select the best one based on evaluation criteria.
-        2. Tree of Thoughts (ToT): Explore multiple reasoning paths and select the most promising one.
-        3. REBASE: Recursively break down the problem, evaluate solutions, and synthesize the final approach.
+        # Analysis Results
+        {json.dumps(analysis_result, indent=2)}
+
+        # Planning Instructions
+        As the Planning Manager:
+        1. Select the most appropriate algorithm approach based on task complexity and domain
+        2. Delegate to the relevant specialist agent to generate candidate solutions
+        3. Have the Verification Agent score each candidate
+        4. Select or synthesize the final approach
 
         # Output Format
         Provide a JSON object with these fields:
-        - selected_algorithm: Name of the selected algorithm (one of the three listed above)
-        - justification: Why this algorithm is most appropriate for this task
-        - expected_benefits: List of advantages this algorithm provides for this specific task
-        - potential_drawbacks: List of limitations or concerns with using this algorithm
+        - selected_algorithm: Which algorithm was chosen (Best-of-N, Tree of Thoughts, or REBASE)
+        - algorithm_justification: Why this algorithm is appropriate
+        - candidate_plans: Array of plan outlines (at least 2-3 different approaches)
+        - selected_plan: The final selected plan with detailed agent/task structure
+        - verification_score: Quality score of the selected plan (1-10)
         """)
         
         # Parse response as JSON
@@ -228,32 +370,47 @@ class MetaCrewFlow(Flow[AgentState]):
             # Fallback with basic structure if parsing fails
             return {
                 "selected_algorithm": "Best-of-N Planning",
-                "justification": "Simple and efficient baseline approach",
-                "expected_benefits": ["Easy to implement", "Produces reliable results"],
-                "potential_drawbacks": ["May not find optimal solutions for complex tasks"]
+                "algorithm_justification": "Default approach for moderate complexity tasks",
+                "candidate_plans": [],
+                "selected_plan": {},
+                "verification_score": 5
             }
     
-    def _create_initial_plan(self, user_task, task_analysis, algorithm_selection):
-        """Create an initial plan for the crew based on the analysis."""
+    def _run_implementation_crew(self, user_task, analysis_result, planning_result):
+        """Run the Implementation Crew with sequential process."""
+        # This simulates a sequential implementation crew
         response = self._call_llm(f"""
-        Create an initial plan for a crew that will tackle the following user task.
+        You are an Implementation Crew consisting of:
+        - Agent Engineer: Designs agent capabilities
+        - Task Designer: Creates task definitions
+        - Workflow Specialist: Defines execution order
+        - Integration Expert: Ensures system coherence
+
+        Your job is to convert the planning concept into executable agent and task definitions.
 
         # User Task
         {user_task}
 
-        # Task Analysis
-        {json.dumps(task_analysis, indent=2)}
+        # Analysis Results
+        {json.dumps(analysis_result, indent=2)}
 
-        # Selected Planning Algorithm
-        {json.dumps(algorithm_selection, indent=2)}
+        # Planning Results
+        {json.dumps(planning_result, indent=2)}
+
+        # Implementation Instructions
+        Work sequentially to:
+        1. Define detailed agent characteristics (name, role, goal, backstory)
+        2. Create specific task specifications with clear purposes
+        3. Structure task dependencies and workflow
+        4. Ensure all parts integrate correctly
 
         # Output Format
-        Create a detailed plan as a JSON object with these fields:
-        - agents: List of agents needed, each with name, role, goal, and backstory
-        - tasks: List of tasks to perform, each with name, description, assigned_to, and optional dependencies
-        - workflow: Object with sequence (task order) and optional parallel_tasks
-        - tools: List of tools needed, each with name, purpose, and used_by (list of agent names)
-        - expected_outcome: Clear description of the expected result
+        Provide a JSON object with these fields:
+        - agents: Array of agent definitions (each with name, role, goal, backstory)
+        - tasks: Array of task definitions (each with name, description, assigned_to, dependencies)
+        - workflow: Object with sequence and parallel_tasks information
+        - process_type: Recommended process type ("sequential" or "hierarchical")
+        - tools: Array of tools needed by the agents
         """)
         
         # Parse response as JSON
@@ -265,39 +422,49 @@ class MetaCrewFlow(Flow[AgentState]):
                 "agents": [],
                 "tasks": [],
                 "workflow": {"sequence": []},
-                "tools": [],
-                "expected_outcome": ""
+                "process_type": "sequential",
+                "tools": []
             }
     
-    def _evaluate_plan(self, user_task, initial_plan, task_analysis):
-        """Evaluate the initial plan and provide feedback for improvement."""
+    def _run_evaluation_crew(self, user_task, analysis_result, planning_result, implementation_result):
+        """Run the Evaluation Crew with hierarchical process."""
+        # This simulates a hierarchical evaluation crew
         response = self._call_llm(f"""
-        Evaluate the following plan for a crew that will tackle a user task.
+        You are an Evaluation Crew with a hierarchical structure:
+        - QA Manager (you): Coordinates evaluation activities
+        - Completeness Tester: Checks for coverage gaps
+        - Efficiency Analyst: Evaluates resource usage
+        - Alignment Validator: Ensures solution meets user needs
+
+        Evaluate the proposed crew implementation against the user task and requirements.
 
         # User Task
         {user_task}
 
-        # Task Analysis
-        {json.dumps(task_analysis, indent=2)}
+        # Analysis Results
+        {json.dumps(analysis_result, indent=2)}
 
-        # Initial Plan
-        {json.dumps(initial_plan, indent=2)}
+        # Planning Results
+        {json.dumps(planning_result, indent=2)}
 
-        # Evaluation Criteria
-        1. Completeness: Does the plan cover all aspects needed to fulfill the task?
-        2. Efficiency: Is the plan structured to minimize redundancy and maximize resource utilization?
-        3. Feasibility: Is the plan realistically executable given typical constraints?
-        4. Alignment: How well does the plan align with the user's stated goals and constraints?
-        5. Risk Management: Does the plan account for potential issues or failures?
+        # Implementation Results
+        {json.dumps(implementation_result, indent=2)}
+
+        # Evaluation Instructions
+        As the QA Manager:
+        1. Define clear evaluation criteria based on completeness, efficiency, feasibility, and alignment
+        2. Delegate testing to the specialist evaluators
+        3. Synthesize feedback and determine overall quality
+        4. Identify areas for improvement
 
         # Output Format
         Provide a JSON object with these fields:
-        - strengths: List of strongest aspects of the plan
-        - weaknesses: List of areas that need improvement
-        - missing_elements: List of critical components absent from the plan
-        - redundancies: List of unnecessary duplication or overlap
-        - improvement_suggestions: List of specific suggestions for enhancing the plan
-        - overall_score: Rating on a scale of 1-10
+        - strengths: List of strongest aspects of the implementation
+        - weaknesses: List of areas needing improvement
+        - missing_elements: Critical components that are missing
+        - recommendations: Specific improvement suggestions
+        - overall_score: Quality rating (1-10)
+        - improvement_area: Which area needs most refinement ("analysis", "planning", "implementation", or "none")
         """)
         
         # Parse response as JSON
@@ -309,54 +476,28 @@ class MetaCrewFlow(Flow[AgentState]):
                 "strengths": [],
                 "weaknesses": [],
                 "missing_elements": [],
-                "redundancies": [],
-                "improvement_suggestions": [],
-                "overall_score": 5
+                "recommendations": [],
+                "overall_score": 5,
+                "improvement_area": "none"
             }
     
-    def _refine_plan(self, initial_plan, evaluation, task_analysis):
-        """Refine the plan based on the evaluation feedback."""
-        response = self._call_llm(f"""
-        Refine the following plan based on the evaluation feedback.
-
-        # Initial Plan
-        {json.dumps(initial_plan, indent=2)}
-
-        # Evaluation
-        {json.dumps(evaluation, indent=2)}
-
-        # Task Analysis
-        {json.dumps(task_analysis, indent=2)}
-
-        # Refinement Instructions
-        1. Address all weaknesses identified in the evaluation
-        2. Add any missing elements
-        3. Remove or consolidate redundancies
-        4. Implement the improvement suggestions where appropriate
-        5. Ensure the refined plan is complete, efficient, feasible, aligned with user goals, and manages risks effectively
-
-        # Output Format
-        Provide a refined plan with the same structure as the initial plan, but with improvements based on the evaluation.
-        Use exactly the same JSON format as the initial plan, with these fields:
-        - agents: List of agents needed, each with name, role, goal, and backstory
-        - tasks: List of tasks to perform, each with name, description, assigned_to, and optional dependencies
-        - workflow: Object with sequence (task order) and optional parallel_tasks
-        - tools: List of tools needed, each with name, purpose, and used_by (list of agent names)
-        - expected_outcome: Clear description of the expected result
-        """)
-        
-        # Parse response as JSON
-        try:
-            return json.loads(response)
-        except:
-            # Fallback if parsing fails
-            return initial_plan
+    # =====================================================================
+    # Helper methods
+    # =====================================================================
+    
+    def _initialize_llm(self):
+        """Initialize the language model with configuration."""
+        self.llm = ChatOpenAI(
+            base_url=self.config.get("api_base", None),
+            api_key=self.config.get("api_key", None),
+            model=self.config.get("model_name", self.model),
+            temperature=self.config.get("temperature", self.temperature),
+            streaming=False
+        )
     
     def _call_llm(self, prompt):
         """Helper method to call the LLM with a prompt."""
-        from langchain.schema import HumanMessage
-        
-        if not hasattr(self, 'llm'):
+        if not hasattr(self, 'llm') or self.llm is None:
             self._initialize_llm()
             
         messages = [HumanMessage(content=prompt)]
@@ -365,8 +506,8 @@ class MetaCrewFlow(Flow[AgentState]):
 
 
 def create_crew_with_flow(user_task: str, config: Dict[str, Any] = None) -> CrewPlan:
-    """Creates a crew plan using the Flow-based approach."""
-    flow = MetaCrewFlow(user_task=user_task, config=config or {})
+    """Creates a crew plan using the Multi-Crew Flow approach."""
+    flow = MultiCrewFlow(user_task=user_task, config=config or {})
     result = flow.kickoff()
     
     # Result is the CrewPlan
