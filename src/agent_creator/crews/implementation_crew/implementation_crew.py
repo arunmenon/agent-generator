@@ -64,12 +64,26 @@ class ImplementationCrew:
         Returns:
             ImplementationOutput with executable agent and task definitions
         """
-        # Run the crew with user task, analysis and planning as input
+        # Extract domain context from analysis result
+        domain = analysis_result.domain
+        process_areas = analysis_result.process_areas
+        problem_context = analysis_result.problem_context
+        input_context = analysis_result.input_context
+        output_context = analysis_result.output_context
+        constraints = analysis_result.constraints
+        
+        # Run the crew with user task, analysis, planning, and domain context as input
         result = self.crew().kickoff(
             inputs={
                 "user_task": user_task,
-                "analysis_result": analysis_result.dict(),
-                "planning_result": planning_result.dict()
+                "analysis_result": analysis_result,  # Pass Pydantic object directly, don't use dict()
+                "planning_result": planning_result,  # CrewAI can work with Pydantic objects directly
+                "domain": domain,
+                "process_areas": process_areas,
+                "problem_context": problem_context,
+                "input_context": input_context,
+                "output_context": output_context,
+                "constraints": constraints
             }
         )
         

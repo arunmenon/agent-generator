@@ -6,6 +6,10 @@ from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field
 from crewai.flow.flow import Flow, listen, start
 import json
+import logging
+
+# Get logger
+logger = logging.getLogger(__name__)
 
 from ..crews.models import (
     AnalysisOutput, PlanningOutput, ImplementationOutput, 
@@ -40,6 +44,14 @@ class MultiCrewFlow(Flow[MultiCrewState]):
     user_task: str = ""
     config: Dict[str, Any] = {}
     
+    # Context properties
+    domain: str = ""
+    process_areas: List[str] = Field(default_factory=list)
+    problem_context: str = ""
+    input_context: str = ""
+    output_context: str = ""
+    constraints: List[str] = Field(default_factory=list)
+    
     # Crew instances
     analysis_crew: Optional[AnalysisCrew] = None
     planning_crew: Optional[PlanningCrew] = None
@@ -52,8 +64,22 @@ class MultiCrewFlow(Flow[MultiCrewState]):
         self.user_task = user_task
         self.config = config or {}
         
+        # Extract context fields from config
+        self.domain = self.config.get("domain", "")
+        self.process_areas = self.config.get("process_areas", [])
+        self.problem_context = self.config.get("problem_context", "")
+        self.input_context = self.config.get("input_context", "")
+        self.output_context = self.config.get("output_context", "")
+        self.constraints = self.config.get("constraints", [])
+        
+        # Log configuration for debugging
+        logger.info(f"MultiCrewFlow initialized with config: {self.config}")
+        
         # Initialize crews
-        self._initialize_crews()
+        try:
+            self._initialize_crews()
+        except Exception as e:
+            logger.error(f"Error initializing crews: {str(e)}", exc_info=True)
     
     def _initialize_crews(self):
         """Initialize all crew instances."""
@@ -67,13 +93,22 @@ class MultiCrewFlow(Flow[MultiCrewState]):
         """Start the flow by running the Analysis Crew."""
         print(f"Starting Multi-Crew Flow - ID: {self.state.id}")
         print(f"Processing task: {self.user_task}")
+        print(f"Domain: {self.domain}")
         
         # Increment iteration counter
         self.state.analysis_iterations += 1
         
         # Run the Analysis Crew
         try:
-            analysis_result = self.analysis_crew.analyze(user_task=self.user_task)
+            analysis_result = self.analysis_crew.analyze(
+                user_task=self.user_task,
+                domain=self.domain,
+                process_areas=self.process_areas,
+                problem_context=self.problem_context,
+                input_context=self.input_context,
+                output_context=self.output_context,
+                constraints=self.constraints
+            )
             
             # Store in state
             self.state.analysis_result = analysis_result
@@ -269,29 +304,38 @@ class MultiCrewFlow(Flow[MultiCrewState]):
             implementation_result = self.state.implementation_result
             evaluation_result = evaluation_data
         
-        # Convert implementation result to CrewPlan
-        agents = [
-            AgentDefinition(**agent_def) 
-            for agent_def in implementation_result.agents
-        ]
+        # Use agents and tasks directly, don't convert to dict and back
+        # This preserves the interpolation placeholders
         
-        tasks = [
-            TaskDefinition(**task_def)
-            for task_def in implementation_result.tasks
-        ]
-        
-        # Create crew plan
+        # Create crew plan with additional context
         crew_plan = CrewPlan(
-            agents=agents, 
-            tasks=tasks,
-            process=implementation_result.process_type
+            name=f"Generated Crew for {self.domain}",
+            description=f"A crew designed to solve {self.problem_context}",
+            agents=implementation_result.agents, 
+            tasks=implementation_result.tasks,
+            process=implementation_result.process_type,
+            domain=self.domain,
+            problem_context=self.problem_context,
+            input_context=self.input_context,
+            output_context=self.output_context,
+            context={
+                "domain": self.domain,
+                "problem_context": self.problem_context,
+                "input_context": self.input_context,
+                "output_context": self.output_context,
+                "process_areas": self.process_areas,
+                "constraints": self.constraints
+            }
         )
+        
+        # Generate input and output schemas based on context
+        crew_plan.generate_schemas_from_context()
         
         # Store in state
         self.state.final_plan = crew_plan
         
         print("Crew configuration finalized.")
-        print(f"Agents: {len(agents)}, Tasks: {len(tasks)}")
+        print(f"Agents: {len(implementation_result.agents)}, Tasks: {len(implementation_result.tasks)}")
         print(f"Process type: {implementation_result.process_type}")
         
         return crew_plan

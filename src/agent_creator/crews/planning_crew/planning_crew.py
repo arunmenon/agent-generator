@@ -24,15 +24,27 @@ class PlanningCrew:
     def _initialize_llm(self):
         """Initialize the language model with configuration."""
         from crewai import LLM
+        import os
         
-        return LLM(
-            provider="openai",
-            base_url=self.config.get("api_base", None),
-            api_key=self.config.get("api_key", None),
-            model=self.config.get("model_name", "gpt-4o"),
-            temperature=self.config.get("temperature", 0.7),
-            streaming=False
-        )
+        # Use environment variable as fallback if not in config
+        api_key = self.config.get("api_key", os.environ.get("OPENAI_API_KEY"))
+        
+        try:
+            return LLM(
+                provider="openai",
+                base_url=self.config.get("api_base", None),
+                api_key=api_key,
+                model=self.config.get("model_name", "gpt-4o"),
+                temperature=self.config.get("temperature", 0.7),
+                streaming=False
+            )
+        except Exception as e:
+            print(f"Error initializing LLM: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            
+            # Fallback to default parameters
+            return LLM(model="gpt-4o")
         
     def crew(self) -> Crew:
         """Create and return a configured PlanningCrew."""
@@ -62,11 +74,25 @@ class PlanningCrew:
         Returns:
             PlanningOutput containing planning results
         """
-        # Run the crew with user task and analysis as input
+        # Extract domain context from analysis result
+        domain = analysis_result.domain
+        process_areas = analysis_result.process_areas
+        problem_context = analysis_result.problem_context
+        input_context = analysis_result.input_context
+        output_context = analysis_result.output_context
+        constraints = analysis_result.constraints
+        
+        # Run the crew with user task, analysis, and domain context as input
         result = self.crew().kickoff(
             inputs={
                 "user_task": user_task,
-                "analysis_result": analysis_result.dict()
+                "analysis_result": analysis_result,  # Pass Pydantic object directly
+                "domain": domain,
+                "process_areas": process_areas,
+                "problem_context": problem_context,
+                "input_context": input_context,
+                "output_context": output_context,
+                "constraints": constraints
             }
         )
         

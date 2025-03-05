@@ -15,13 +15,25 @@ router = APIRouter()
 @router.post("/create", response_model=Dict[str, Any])
 def create_crew_with_flow_api(
     task: str,
+    domain: str,
+    problem_context: str,
+    input_context: str,
+    output_context: str,
+    process_areas: Optional[List[str]] = Query(None, description="Specific process areas within the domain"),
+    constraints: Optional[List[str]] = Query(None, description="Limitations or requirements that must be followed"),
     model_name: Optional[str] = Query("gpt-4o", description="The LLM to use"),
     temperature: Optional[float] = Query(0.7, description="LLM temperature parameter")
 ):
     """Create a new crew configuration using the Flow-based approach."""
     config = {
         "model_name": model_name,
-        "temperature": temperature
+        "temperature": temperature,
+        "domain": domain,
+        "process_areas": process_areas or [],
+        "problem_context": problem_context,
+        "input_context": input_context,
+        "output_context": output_context,
+        "constraints": constraints or []
     }
     
     try:
@@ -33,30 +45,59 @@ def create_crew_with_flow_api(
         c = conn.cursor()
         
         # Insert crew metadata - use the process type from the crew plan
-        crew_name = f"Flow-Generated Crew: {task[:30]}..."
-        process_type = getattr(crew_plan, 'process', 'sequential')
+        crew_name = crew_plan.name
+        process_type = crew_plan.process
+        
+        # Convert input and output schemas to JSON strings
+        input_schema_json = json.dumps(crew_plan.input_schema.model_dump() if crew_plan.input_schema else {})
+        output_schema_json = json.dumps(crew_plan.output_schema.model_dump() if crew_plan.output_schema else {})
+        
         c.execute("""
-            INSERT INTO crew_metadata (crew_name, process, manager_llm, is_active)
-            VALUES (?, ?, ?, ?)
-        """, (crew_name, process_type, "gpt-4o", 1))
+            INSERT INTO crew_metadata (
+                crew_name, process, manager_llm, is_active, 
+                domain, problem_context, input_context, output_context,
+                input_schema, output_schema)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            crew_name, process_type, "gpt-4o", 1, 
+            crew_plan.domain, crew_plan.problem_context, 
+            crew_plan.input_context, crew_plan.output_context,
+            input_schema_json, output_schema_json
+        ))
         
         crew_id = c.lastrowid
         
-        # Insert agents
+        # Insert agents - use the model_dump to preserve interpolation placeholders
         for agent in crew_plan.agents:
+            agent_data = agent.model_dump()
             c.execute("""
-                INSERT INTO agent (crew_id, name, role, goal, llm, backstory)
-                VALUES (?, ?, ?, ?, ?, ?)
-            """, (crew_id, agent.name, agent.role, agent.goal, "gpt-4o", agent.backstory))
+                INSERT INTO agent (crew_id, name, role, goal, llm, backstory, tools)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (
+                crew_id, 
+                agent_data["name"], 
+                agent_data["role"], 
+                agent_data["goal"], 
+                "gpt-4o", 
+                agent_data["backstory"],
+                json.dumps(agent_data.get("tools", []))
+            ))
         
-        # Insert tasks
+        # Insert tasks - use the model_dump to preserve interpolation placeholders
         for task in crew_plan.tasks:
-            context_tasks = json.dumps(task.dependencies) if task.dependencies else "[]"
-            agent_name = task.name.split("_")[0] if "_" in task.name else task.name
+            task_data = task.model_dump()
+            context_tasks = json.dumps(task_data.get("context", []))
             c.execute("""
-                INSERT INTO task (crew_id, name, description, agent_name, context_tasks)
-                VALUES (?, ?, ?, ?, ?)
-            """, (crew_id, task.name, task.purpose, agent_name, context_tasks))
+                INSERT INTO task (crew_id, name, description, agent_name, context_tasks, expected_output)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (
+                crew_id, 
+                task.name, 
+                task_data["description"], 
+                task_data["agent"], 
+                context_tasks,
+                task_data.get("expected_output", "")
+            ))
         
         conn.commit()
         conn.close()
@@ -64,6 +105,13 @@ def create_crew_with_flow_api(
         return {
             "status": "success", 
             "crew_id": crew_id,
+            "crew_name": crew_name,
+            "domain": crew_plan.domain,
+            "process": process_type,
+            "agents_count": len(crew_plan.agents),
+            "tasks_count": len(crew_plan.tasks),
+            "input_schema": crew_plan.input_schema.model_dump() if crew_plan.input_schema else {},
+            "output_schema": crew_plan.output_schema.model_dump() if crew_plan.output_schema else {},
             "message": f"Crew created successfully using Multi-Crew Flow approach with {process_type} process"
         }
         
@@ -73,13 +121,25 @@ def create_crew_with_flow_api(
 @router.post("/debug", response_model=Dict[str, Any])
 def debug_crew_flow(
     task: str = Body(..., embed=True),
+    domain: str = Body(..., embed=True),
+    problem_context: str = Body(..., embed=True),
+    input_context: str = Body(..., embed=True),
+    output_context: str = Body(..., embed=True),
+    process_areas: List[str] = Body([], embed=True),
+    constraints: List[str] = Body([], embed=True),
     model_name: str = Body("gpt-4o", embed=True),
     temperature: float = Body(0.7, embed=True)
 ):
     """Debug endpoint that returns the full analysis process without saving to the database."""
     config = {
         "model_name": model_name,
-        "temperature": temperature
+        "temperature": temperature,
+        "domain": domain,
+        "process_areas": process_areas,
+        "problem_context": problem_context,
+        "input_context": input_context,
+        "output_context": output_context,
+        "constraints": constraints
     }
     
     try:
@@ -139,6 +199,8 @@ def debug_crew_flow(
         return {
             "status": "success",
             "task": task,
+            "domain": domain,
+            "problem_context": problem_context,
             "analysis": mock_analysis,
             "planning": mock_planning,
             "implementation": mock_implementation,
@@ -150,9 +212,54 @@ def debug_crew_flow(
                 "evaluation": 1
             },
             "final_crew_plan": {
-                "agents": [vars(agent) for agent in result.agents],
-                "tasks": [vars(task) for task in result.tasks],
-                "process": getattr(result, "process", "sequential")
+                "name": f"Generated Crew for {domain}",
+                "description": f"A crew designed to solve {problem_context}", 
+                "process": getattr(result, "process", "sequential"),
+                "domain": domain,
+                "problem_context": problem_context,
+                "input_context": input_context,
+                "output_context": output_context,
+                "context": {
+                    "domain": domain,
+                    "problem_context": problem_context,
+                    "input_context": input_context, 
+                    "output_context": output_context,
+                    "process_areas": process_areas,
+                    "constraints": constraints
+                },
+                "agents": [agent.model_dump() for agent in result.agents],
+                "tasks": [task.model_dump() for task in result.tasks],
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "domain": {
+                            "type": "string",
+                            "description": f"The domain context ({domain})",
+                            "example": domain
+                        },
+                        "problem_context": {
+                            "type": "string",
+                            "description": "Detailed description of the problem being solved",
+                            "example": problem_context
+                        },
+                        "input_data": {
+                            "type": "object",
+                            "description": f"The input data: {input_context}",
+                            "example": {"sample": "data"}
+                        }
+                    },
+                    "required": ["domain", "problem_context", "input_data"]
+                },
+                "output_schema": {
+                    "type": "object",
+                    "properties": {
+                        "result": {
+                            "type": "object",
+                            "description": f"The output result: {output_context}",
+                            "example": {"status": "success", "data": {}}
+                        }
+                    }
+                }
             }
         }
         

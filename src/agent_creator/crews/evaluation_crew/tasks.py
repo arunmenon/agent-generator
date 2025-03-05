@@ -26,10 +26,16 @@ def create_tasks(agents: List[Agent]) -> List[Task]:
         description="""
         Define comprehensive evaluation criteria for the implementation.
         
-        User Task: {{user_task}}
-        Analysis Results: {{analysis_result}}
-        Planning Results: {{planning_result}}
-        Implementation Results: {{implementation_result}}
+        User Task: {user_task}
+        Domain: {domain}
+        Problem Context: {problem_context}
+        Input Context: {input_context}
+        Output Context: {output_context}
+        Process Areas: {process_areas}
+        Constraints: {constraints}
+        Analysis Results: {analysis_result}
+        Planning Results: {planning_result}
+        Implementation Results: {implementation_result}
         
         Your job is to:
         1. Define specific evaluation criteria for this implementation

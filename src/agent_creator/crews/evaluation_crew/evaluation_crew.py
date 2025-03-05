@@ -66,13 +66,27 @@ class EvaluationCrew:
         Returns:
             EvaluationOutput with assessment results and recommendations
         """
-        # Run the crew with all previous results as input
+        # Extract domain context from analysis result
+        domain = analysis_result.domain
+        process_areas = analysis_result.process_areas
+        problem_context = analysis_result.problem_context
+        input_context = analysis_result.input_context
+        output_context = analysis_result.output_context
+        constraints = analysis_result.constraints
+        
+        # Run the crew with all previous results and context as input
         result = self.crew().kickoff(
             inputs={
                 "user_task": user_task,
-                "analysis_result": analysis_result.dict(),
-                "planning_result": planning_result.dict(),
-                "implementation_result": implementation_result.dict()
+                "analysis_result": analysis_result,  # Pass Pydantic object directly
+                "planning_result": planning_result,  # Avoid dict() to preserve all context
+                "implementation_result": implementation_result,  # Let CrewAI handle the object directly
+                "domain": domain,
+                "process_areas": process_areas,
+                "problem_context": problem_context,
+                "input_context": input_context,
+                "output_context": output_context,
+                "constraints": constraints
             }
         )
         

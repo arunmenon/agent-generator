@@ -22,13 +22,23 @@ def create_tasks(agents: List[Agent]) -> List[Task]:
     rebase_agent = next(a for a in agents if a.role == "REBASE Specialist")
     verification_agent = next(a for a in agents if a.role == "Verification Agent")
     
+    # Set context for agent roles and backstories 
+    # (Note: CrewAI interpolation is already handled automatically with {variable} syntax)
+    # We don't need to manually replace anything here
+    
     # Task 1: Select Algorithm
     select_algorithm = Task(
         description="""
         Based on the user task and analysis, select the most appropriate planning algorithm.
         
-        User Task: {{user_task}}
-        Analysis Results: {{analysis_result}}
+        User Task: {user_task}
+        Domain: {domain}
+        Problem Context: {problem_context}
+        Input Context: {input_context}
+        Output Context: {output_context}
+        Process Areas: {process_areas}
+        Constraints: {constraints}
+        Analysis Results: {analysis_result}
         
         Available Planning Algorithms:
         1. Best-of-N Planning: Generate multiple plans and select the best one based on evaluation criteria.
@@ -37,8 +47,9 @@ def create_tasks(agents: List[Agent]) -> List[Task]:
         
         Your job is to:
         1. Analyze the task complexity, domain, and constraints
-        2. Select the most appropriate algorithm for this specific task
-        3. Provide clear justification for your selection
+        2. Consider the specific needs of {domain} and {problem_context}
+        3. Select the most appropriate algorithm for this specific task
+        4. Provide clear justification for your selection
         
         Format your response as a JSON object with these fields:
         - selected_algorithm: Name of the selected algorithm (one of the three listed above)

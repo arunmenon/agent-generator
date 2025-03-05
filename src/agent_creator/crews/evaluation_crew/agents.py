@@ -57,10 +57,12 @@ def create_agents(llm: Any) -> List[Agent]:
         role="Alignment Validator",
         goal="Ensure solution meets user needs and requirements",
         backstory="""You are a validator who specializes in ensuring solutions
-        actually meet user needs. You constantly check implementations against
-        original requirements and user intent, making sure that the technical
-        solution addresses the real underlying problem. You're skilled at detecting
-        when solutions miss the mark despite technical correctness.""",
+        actually meet user needs, particularly in the {domain} field. You constantly check 
+        implementations against original requirements and user intent, making sure that 
+        the technical solution addresses the real underlying problem. You're skilled at 
+        detecting when solutions miss the mark despite technical correctness. You're deeply
+        familiar with {problem_context} scenarios and can verify whether solutions properly
+        handle {input_context} inputs and generate appropriate {output_context} outputs.""",
         verbose=True,
         llm=llm
     )

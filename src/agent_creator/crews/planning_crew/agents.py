@@ -20,9 +20,11 @@ def create_agents(llm: Any) -> List[Agent]:
         role="Planning Manager",
         goal="Oversee the planning process and select the best approach",
         backstory="""You are an experienced planning manager who knows how to 
-        select the right approach for different problems. You have a deep 
-        understanding of various planning algorithms and can effectively 
-        delegate to specialists and synthesize their work.""",
+        select the right approach for different problems, particularly in the {domain} domain. 
+        You have a deep understanding of various planning algorithms and can effectively 
+        delegate to specialists and synthesize their work. You understand the specific needs 
+        of {problem_context} problems and ensure that plans address the expected
+        {input_context} inputs and required {output_context} outputs.""",
         verbose=True,
         llm=llm
     )

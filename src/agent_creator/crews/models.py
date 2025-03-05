@@ -14,6 +14,11 @@ class AnalysisOutput(BaseModel):
     time_sensitivity: Dict[str, Any] = Field(default_factory=dict, description="Time sensitivity information")
     success_criteria: List[str] = Field(default_factory=list, description="Criteria for successful completion")
     recommended_process_type: str = Field(default="sequential", description="Recommended crew process type")
+    domain: str = Field(default="", description="The domain or industry context")
+    process_areas: List[str] = Field(default_factory=list, description="Specific process areas within the domain")
+    problem_context: str = Field(default="", description="Detailed context about the problem being solved")
+    input_context: str = Field(default="", description="Description of the inputs available to the system")
+    output_context: str = Field(default="", description="Description of the expected outputs from the system")
 
 class AgentDefinition(BaseModel):
     """Definition of an agent in a plan."""
@@ -21,14 +26,45 @@ class AgentDefinition(BaseModel):
     role: str = Field(..., description="Role of the agent")
     goal: str = Field(..., description="Goal of the agent")
     backstory: str = Field(default="", description="Backstory of the agent")
+    verbose: bool = Field(default=True, description="Whether agent should be verbose")
+    allow_delegation: bool = Field(default=True, description="Whether agent can delegate tasks")
+    tools: List[str] = Field(default_factory=list, description="Tools available to the agent")
+    
+    def model_dump(self) -> Dict[str, Any]:
+        """Custom serialization to preserve interpolation placeholders"""
+        return {
+            "name": self.name,
+            "role": self.role,
+            "goal": self.goal,
+            "backstory": self.backstory,
+            "verbose": self.verbose,
+            "allow_delegation": self.allow_delegation,
+            "tools": self.tools
+        }
 
 class TaskDefinition(BaseModel):
     """Definition of a task in a plan."""
     name: str = Field(..., description="Name of the task")
     description: str = Field(..., description="Description of what the task does")
     assigned_to: str = Field(..., description="Name of the agent assigned to this task")
+    expected_output: str = Field(default="", description="Expected output format")
     dependencies: List[str] = Field(default_factory=list, description="Tasks this task depends on")
+    context: List[str] = Field(default_factory=list, description="Context tasks")
+    async_execution: bool = Field(default=False, description="Whether task runs asynchronously")
+    output_file: Optional[str] = Field(default=None, description="File to save output to")
     complexity: str = Field(default="Medium", description="Complexity level (Low, Medium, High)")
+    
+    def model_dump(self) -> Dict[str, Any]:
+        """Custom serialization to preserve interpolation placeholders"""
+        return {
+            "name": self.name,
+            "description": self.description,
+            "agent": self.assigned_to,  # Field name change to match CrewAI
+            "expected_output": self.expected_output,
+            "context": self.context if self.context else self.dependencies,
+            "async_execution": self.async_execution,
+            "output_file": self.output_file
+        }
 
 class WorkflowDefinition(BaseModel):
     """Definition of a workflow in a plan."""
@@ -84,8 +120,157 @@ class EvaluationOutput(BaseModel):
     overall_score: int = Field(..., ge=1, le=10, description="Overall quality score")
     improvement_area: str = Field(default="none", description="Area needing most improvement")
 
+class InputParameter(BaseModel):
+    """Definition of an input parameter for a crew."""
+    name: str = Field(..., description="Name of the parameter")
+    description: str = Field(..., description="Description of the parameter")
+    type: str = Field(..., description="Data type of the parameter")
+    required: bool = Field(default=True, description="Whether the parameter is required")
+    default: Optional[Any] = Field(default=None, description="Default value if any")
+    example: Optional[Any] = Field(default=None, description="Example value")
+
+class OutputParameter(BaseModel):
+    """Definition of an output parameter from a crew."""
+    name: str = Field(..., description="Name of the output parameter")
+    description: str = Field(..., description="Description of the output parameter")
+    type: str = Field(..., description="Data type of the output parameter")
+    example: Optional[Any] = Field(default=None, description="Example value")
+
+class InputSchema(BaseModel):
+    """Input schema for a crew."""
+    parameters: List[InputParameter] = Field(..., description="Input parameters")
+    
+    def model_dump(self) -> Dict[str, Any]:
+        """Convert to a JSON Schema compatible format"""
+        properties = {}
+        required = []
+        
+        for param in self.parameters:
+            properties[param.name] = {
+                "type": param.type,
+                "description": param.description
+            }
+            if param.example:
+                properties[param.name]["example"] = param.example
+            if param.default is not None:
+                properties[param.name]["default"] = param.default
+            
+            if param.required:
+                required.append(param.name)
+        
+        return {
+            "type": "object",
+            "properties": properties,
+            "required": required
+        }
+
+class OutputSchema(BaseModel):
+    """Output schema for a crew."""
+    parameters: List[OutputParameter] = Field(..., description="Output parameters")
+    
+    def model_dump(self) -> Dict[str, Any]:
+        """Convert to a JSON Schema compatible format"""
+        properties = {}
+        
+        for param in self.parameters:
+            properties[param.name] = {
+                "type": param.type,
+                "description": param.description
+            }
+            if param.example:
+                properties[param.name]["example"] = param.example
+        
+        return {
+            "type": "object",
+            "properties": properties
+        }
+
 class CrewPlan(BaseModel):
     """Final crew plan with agents, tasks and process type."""
+    name: str = Field(default="Generated Crew", description="Name of the crew")
+    description: str = Field(default="", description="Description of the crew's purpose")
     agents: List[AgentDefinition] = Field(..., description="Agent definitions")
     tasks: List[TaskDefinition] = Field(..., description="Task definitions")
     process: str = Field(default="sequential", description="Process type (sequential or hierarchical)")
+    verbose: bool = Field(default=True, description="Whether crew execution is verbose")
+    context: Dict[str, Any] = Field(default_factory=dict, description="Context variables for interpolation")
+    domain: str = Field(default="", description="Domain context for the crew")
+    problem_context: str = Field(default="", description="Problem being solved")
+    input_context: str = Field(default="", description="Input context description")
+    output_context: str = Field(default="", description="Output context description")
+    input_schema: Optional[InputSchema] = Field(default=None, description="Schema for crew inputs")
+    output_schema: Optional[OutputSchema] = Field(default=None, description="Schema for crew outputs")
+    
+    def model_dump(self) -> Dict[str, Any]:
+        """Custom serialization that preserves interpolation placeholders"""
+        result = {
+            "name": self.name,
+            "description": self.description,
+            "process": self.process,
+            "verbose": self.verbose,
+            "agents": [agent.model_dump() for agent in self.agents],
+            "tasks": [task.model_dump() for task in self.tasks],
+            "context": {
+                "domain": self.domain,
+                "problem_context": self.problem_context,
+                "input_context": self.input_context,
+                "output_context": self.output_context,
+                **self.context
+            }
+        }
+        
+        # Include schema information if available
+        if self.input_schema:
+            result["input_schema"] = self.input_schema.model_dump()
+        
+        if self.output_schema:
+            result["output_schema"] = self.output_schema.model_dump()
+            
+        return result
+        
+    def generate_schemas_from_context(self):
+        """Auto-generate input and output schemas based on context information"""
+        # Generate input schema based on input_context
+        input_params = [
+            InputParameter(
+                name="domain",
+                description=f"The domain context ({self.domain})",
+                type="string",
+                required=True,
+                example=self.domain
+            ),
+            InputParameter(
+                name="problem_context",
+                description="Detailed description of the problem being solved",
+                type="string",
+                required=True,
+                example=self.problem_context if self.problem_context else "Catalog compliance verification"
+            )
+        ]
+        
+        # Add more parameters based on input_context if available
+        if self.input_context:
+            input_params.append(
+                InputParameter(
+                    name="input_data",
+                    description=f"The input data: {self.input_context}",
+                    type="object",
+                    required=True,
+                    example={"sample": "data"}
+                )
+            )
+        
+        # Create the schemas
+        self.input_schema = InputSchema(parameters=input_params)
+        
+        # Generate output schema based on output_context
+        output_params = [
+            OutputParameter(
+                name="result",
+                description=f"The output result: {self.output_context}",
+                type="object",
+                example={"status": "success", "data": {}}
+            )
+        ]
+        
+        self.output_schema = OutputSchema(parameters=output_params)

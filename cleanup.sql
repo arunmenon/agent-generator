@@ -1,18 +1,11 @@
--- Delete tasks associated with crews that have no crew_name
-DELETE FROM task
-WHERE crew_id IN (
-    SELECT crew_id FROM crew_metadata
-    WHERE crew_name IS NULL OR crew_name = ''
-);
 
--- Delete agents associated with crews that have no crew_name
-DELETE FROM agent
-WHERE crew_id IN (
-    SELECT crew_id FROM crew_metadata
-    WHERE crew_name IS NULL OR crew_name = ''
-);
-
--- Finally, delete the crews themselves
-DELETE FROM crew_metadata
-WHERE crew_name IS NULL OR crew_name = '';
+ALTER TABLE crew_metadata ADD COLUMN domain TEXT DEFAULT '';
+ALTER TABLE crew_metadata ADD COLUMN problem_context TEXT DEFAULT '';
+ALTER TABLE crew_metadata ADD COLUMN input_context TEXT DEFAULT '';
+ALTER TABLE crew_metadata ADD COLUMN output_context TEXT DEFAULT '';
+ALTER TABLE crew_metadata ADD COLUMN input_schema TEXT DEFAULT '{}';
+ALTER TABLE crew_metadata ADD COLUMN output_schema TEXT DEFAULT '{}';
+ALTER TABLE agent ADD COLUMN backstory TEXT DEFAULT '';
+ALTER TABLE agent ADD COLUMN tools TEXT DEFAULT '[]';
+ALTER TABLE agent ADD COLUMN allow_delegation BOOLEAN DEFAULT 1;
 

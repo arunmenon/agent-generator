@@ -26,15 +26,23 @@ def create_tasks(agents: List[Agent]) -> List[Task]:
         description="""
         Create detailed agent definitions based on the selected plan.
         
-        User Task: {{user_task}}
-        Analysis Results: {{analysis_result}}
-        Planning Results: {{planning_result}}
+        User Task: {user_task}
+        Domain: {domain}
+        Problem Context: {problem_context}
+        Input Context: {input_context}
+        Output Context: {output_context}
+        Process Areas: {process_areas}
+        Constraints: {constraints}
+        Analysis Results: {analysis_result}
+        Planning Results: {planning_result}
         
         Your job is to:
         1. Review the agent definitions in the selected plan
         2. Enhance and refine the agent specifications
         3. Ensure each agent has a clear role, goal, and backstory
         4. Make sure agents collectively cover all required capabilities
+        5. Include domain expertise related to {domain} in agent backstories
+        6. Ensure agents understand how to work with {input_context} inputs and produce {output_context} outputs
         
         Format your response as a JSON object with:
         - agents: Array of agent definitions, each with:

@@ -20,12 +20,22 @@ def create_tasks(agents: List[Agent]) -> List[Task]:
     requirements_engineer = next(a for a in agents if a.role == "Requirements Engineer")
     domain_expert = next(a for a in agents if a.role == "Domain Expert")
     
+    # Set context for agent roles and backstories 
+    # (Note: CrewAI interpolation is already handled automatically with {variable} syntax)
+    # We don't need to manually replace anything here
+    
     # Task 1: Extract Requirements
     extract_requirements = Task(
         description="""
         Analyze the user task and extract clear, actionable requirements.
         
-        User Task: {{user_task}}
+        User Task: {user_task}
+        Domain: {domain}
+        Problem Context: {problem_context}
+        Input Context: {input_context}
+        Output Context: {output_context}
+        Process Areas: {process_areas}
+        Constraints: {constraints}
         
         Your job is to:
         1. Identify the core requirements that must be fulfilled
@@ -45,13 +55,20 @@ def create_tasks(agents: List[Agent]) -> List[Task]:
         Analyze the user task and identify all constraints that will impact the solution.
         
         User Task: {{user_task}}
+        Domain: {{domain}}
+        Problem Context: {{problem_context}}
+        Input Context: {{input_context}}
+        Output Context: {{output_context}}
+        Process Areas: {{process_areas}}
+        Provided Constraints: {{constraints}}
         Requirements: {{extract_requirements.output}}
         
         Your job is to:
-        1. Identify explicit constraints directly mentioned in the task
-        2. Infer implicit constraints based on the context
-        3. Consider technological, resource, time, or other limitations
-        4. Create a structured list of constraints
+        1. Consider the provided constraints list first
+        2. Identify additional explicit constraints directly mentioned in the task
+        3. Infer implicit constraints based on the context
+        4. Consider technological, resource, time, or other limitations
+        5. Create a comprehensive structured list of constraints
         
         Format your response as a JSON object with "constraints" as a list of strings.
         """,
@@ -66,15 +83,21 @@ def create_tasks(agents: List[Agent]) -> List[Task]:
         Analyze the user task and determine the domain knowledge required.
         
         User Task: {{user_task}}
+        Domain: {{domain}}
+        Problem Context: {{problem_context}}
+        Input Context: {{input_context}}
+        Output Context: {{output_context}}
+        Process Areas: {{process_areas}}
         Requirements: {{extract_requirements.output}}
         Constraints: {{identify_constraints.output}}
         
         Your job is to:
-        1. Identify the technical domains relevant to this task
-        2. Assess the complexity level on a scale of 1-10
-        3. Determine time sensitivity of the task
-        4. Define clear success criteria
-        5. Recommend whether a sequential or hierarchical process would be better for this task
+        1. Start with the provided domain and process areas information
+        2. Identify additional technical domains relevant to this task
+        3. Assess the complexity level on a scale of 1-10
+        4. Determine time sensitivity of the task
+        5. Define clear success criteria
+        6. Recommend whether a sequential or hierarchical process would be better for this task
         
         Format your response as a JSON object with these fields:
         - domain_knowledge: List of relevant domains
@@ -94,6 +117,12 @@ def create_tasks(agents: List[Agent]) -> List[Task]:
         Synthesize all the analysis into a comprehensive report.
         
         User Task: {{user_task}}
+        Domain: {{domain}}
+        Problem Context: {{problem_context}}
+        Input Context: {{input_context}}
+        Output Context: {{output_context}}
+        Process Areas: {{process_areas}}
+        Provided Constraints: {{constraints}}
         Requirements: {{extract_requirements.output}}
         Constraints: {{identify_constraints.output}}
         Domain Analysis: {{assess_domain.output}}
@@ -111,6 +140,11 @@ def create_tasks(agents: List[Agent]) -> List[Task]:
         - time_sensitivity: Object from domain analysis
         - success_criteria: List from domain analysis
         - recommended_process_type: From domain analysis
+        - domain: The domain context (as provided and possibly enhanced)
+        - process_areas: Process areas related to the task
+        - problem_context: The problem context (as provided)
+        - input_context: Description of inputs (as provided)
+        - output_context: Description of outputs (as provided)
         """,
         agent=requirements_engineer,
         expected_output="JSON with complete analysis",
