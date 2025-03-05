@@ -1,6 +1,17 @@
 # AgentCreator Crew
 
-Welcome to the AgentCreator Crew project, powered by [crewAI](https://crewai.com). This template is designed to help you set up a multi-agent AI system with ease, leveraging the powerful and flexible framework provided by crewAI. Our goal is to enable your agents to collaborate effectively on complex tasks, maximizing their collective intelligence and capabilities.
+Welcome to the AgentCreator Crew project, powered by [crewAI](https://crewai.com). This project provides tools for generating CrewAI crews based on user-defined tasks using a hierarchical, multi-crew approach.
+
+## Architecture Overview
+
+The Agent Creator uses a hierarchical flow architecture with four specialized crews:
+
+1. **Analysis Crew**: Analyzes requirements, determines complexity and process type
+2. **Planning Crew**: Selects algorithms (Best-of-N, Tree-of-Thoughts, REBASE) for planning
+3. **Implementation Crew**: Defines agents, tasks, and workflow
+4. **Evaluation Crew**: Scores and suggests improvements
+
+Each crew contributes to an iterative refinement process that results in a fully specified CrewAI configuration.
 
 ## Installation
 
@@ -26,6 +37,67 @@ crewai install
 - Modify `src/agent_creator/config/tasks.yaml` to define your tasks
 - Modify `src/agent_creator/crew.py` to add your own logic, tools and specific args
 - Modify `src/agent_creator/main.py` to add custom inputs for your agents and tasks
+
+## Flow Architecture
+
+The flow architecture orchestrates the specialized crews in a sequential process with feedback loops:
+
+```
+Analysis → Planning → Implementation → Evaluation → Final Crew Plan
+    ↑          ↑            ↑               |
+    └──────────┴────────────┴───────────────┘
+             (Refinement Loop)
+```
+
+- The process starts with analysis of the user's task
+- Each crew builds on the output of previous crews
+- Evaluation determines if refinement is needed
+- Refinement loops target specific areas for improvement
+
+## API Usage
+
+### REST API
+
+The API provides endpoints for creating crews using the flow approach:
+
+- `POST /flow/create`: Create a new crew with the flow approach
+- `POST /flow/debug`: Debug endpoint that returns intermediate results
+
+### Direct Usage
+
+You can also use the flow directly in your code:
+
+```python
+from src.agent_creator.flow_crew import create_crew_with_flow
+
+# Create a new crew plan
+crew_plan = create_crew_with_flow(
+    user_task="Design a research assistant that helps collect and summarize scientific papers",
+    config={"model_name": "gpt-4o", "temperature": 0.7}
+)
+
+# Access the agents and tasks
+for agent in crew_plan.agents:
+    print(f"Agent: {agent.name}, Role: {agent.role}")
+
+for task in crew_plan.tasks:
+    print(f"Task: {task.name}, Purpose: {task.purpose}")
+```
+
+## CLI Usage for Flow
+
+Run the flow directly from the command line:
+
+```bash
+# Run directly (no API)
+python -m src.agent_creator.main flow --task "Design a customer support chatbot that can handle product inquiries"
+
+# Run via API
+python -m src.agent_creator.main flow --api --task "Design a customer support chatbot"
+
+# Run with debug information
+python -m src.agent_creator.main flow --api --debug --task "Design a customer support chatbot"
+```
 
 ## Running the Project
 

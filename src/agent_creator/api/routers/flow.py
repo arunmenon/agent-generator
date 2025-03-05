@@ -4,12 +4,14 @@ import sqlite3
 import os
 import json
 
-from src.agent_creator.flow import create_crew_with_flow
+# Import the flow_crew module
+from src.agent_creator.flow_crew import create_crew_with_flow
+from src.agent_creator.flow_crew import MultiCrewFlow
 
 DB_PATH = os.environ.get("DB_PATH", "crews.db")
 router = APIRouter()
 
-@router.post("/flow", response_model=Dict[str, Any])
+@router.post("/create", response_model=Dict[str, Any])
 def create_crew_with_flow_api(
     task: str,
     model_name: Optional[str] = Query("gpt-4o", description="The LLM to use"),
@@ -67,7 +69,7 @@ def create_crew_with_flow_api(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error creating crew: {str(e)}")
 
-@router.post("/flow/debug", response_model=Dict[str, Any])
+@router.post("/debug", response_model=Dict[str, Any])
 def debug_crew_flow(
     task: str = Body(..., embed=True),
     model_name: str = Body("gpt-4o", embed=True),
@@ -81,8 +83,6 @@ def debug_crew_flow(
     
     try:
         # Initialize the flow but capture intermediate state for debugging
-        from src.agent_creator.flow import MultiCrewFlow
-        
         flow = MultiCrewFlow(user_task=task, config=config)
         result = flow.kickoff()
         
@@ -101,8 +101,8 @@ def debug_crew_flow(
                 "evaluation": flow.state.evaluation_iterations
             },
             "final_crew_plan": {
-                "agents": [agent.dict() for agent in result.agents],
-                "tasks": [task.dict() for task in result.tasks],
+                "agents": [agent.__dict__ for agent in result.agents],
+                "tasks": [task.__dict__ for task in result.tasks],
                 "process": getattr(result, "process", "sequential")
             }
         }
