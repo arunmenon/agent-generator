@@ -4,7 +4,7 @@ import sqlite3
 import os
 import json
 
-from src.agent_creator.flow_crew import create_crew_with_flow
+from src.agent_creator.flow import create_crew_with_flow
 
 DB_PATH = os.environ.get("DB_PATH", "crews.db")
 router = APIRouter()
@@ -81,7 +81,7 @@ def debug_crew_flow(
     
     try:
         # Initialize the flow but capture intermediate state for debugging
-        from src.agent_creator.flow_crew import MultiCrewFlow
+        from src.agent_creator.flow import MultiCrewFlow
         
         flow = MultiCrewFlow(user_task=task, config=config)
         result = flow.kickoff()
