@@ -1,154 +1,54 @@
-"""
-Simplified test script for flow crew API testing - includes mock classes so we don't need
-the full crewai dependencies.
-"""
+"""Test file for checking flow-based crew implementations."""
 
-import json
-from pydantic import BaseModel, Field
-from typing import List, Dict, Any, Optional
-
-# Mock classes to replace flow_crew imports
-class AgentDefinition:
-    """Definition of an agent with name, role, goal and backstory."""
-    
-    def __init__(self, name: str, role: str, goal: str, backstory: str = ""):
-        self.name = name
-        self.role = role
-        self.goal = goal
-        self.backstory = backstory
-        
-    def __dict__(self):
-        return {
-            "name": self.name,
-            "role": self.role,
-            "goal": self.goal,
-            "backstory": self.backstory
-        }
-
-class TaskDefinition:
-    """Definition of a task with name, purpose and optional dependencies."""
-    
-    def __init__(self, name: str, purpose: str, dependencies: List[str] = None, complexity: str = "Medium"):
-        self.name = name
-        self.purpose = purpose
-        self.dependencies = dependencies or []
-        self.complexity = complexity
-        
-    def __dict__(self):
-        return {
-            "name": self.name,
-            "purpose": self.purpose,
-            "dependencies": self.dependencies,
-            "complexity": self.complexity
-        }
-
-class CrewPlan:
-    """A plan for a crew with agents, tasks and process type."""
-    
-    def __init__(self, agents: List[AgentDefinition], tasks: List[TaskDefinition], process: str = "sequential"):
-        self.agents = agents
-        self.tasks = tasks
-        self.process = process
-
-# Mock the CrewAI Flow functionality (since we can't install crewai)
-class MockFlowClass:
-    def kickoff(self):
-        # Return a mock CrewPlan
-        agents = [
-            AgentDefinition(
-                name="Customer Service Agent",
-                role="Handle customer inquiries and provide helpful responses",
-                goal="Ensure customer satisfaction",
-                backstory="Experienced in customer support with deep product knowledge"
-            ),
-            AgentDefinition(
-                name="Product Specialist",
-                role="Provide detailed product information",
-                goal="Give accurate product details and recommendations",
-                backstory="Expert in the product catalog and features"
-            ),
-            AgentDefinition(
-                name="Returns Handler",
-                role="Process return requests efficiently",
-                goal="Make the returns process smooth and transparent",
-                backstory="Knowledgeable about company return policies and procedures"
-            )
-        ]
-        
-        tasks = [
-            TaskDefinition(
-                name="Greet and identify customer needs",
-                purpose="Establish rapport and understand customer requirements",
-                dependencies=[],
-                complexity="Low"
-            ),
-            TaskDefinition(
-                name="Provide product information",
-                purpose="Answer detailed questions about products",
-                dependencies=["Greet and identify customer needs"],
-                complexity="Medium"
-            ),
-            TaskDefinition(
-                name="Process return requests",
-                purpose="Handle returns efficiently according to policy",
-                dependencies=["Greet and identify customer needs"],
-                complexity="Medium"
-            )
-        ]
-        
-        return CrewPlan(agents=agents, tasks=tasks, process="sequential")
-
-# Mock the Flow class
-def create_crew_with_flow_mock(user_task: str, config: Dict[str, Any] = None) -> CrewPlan:
-    """
-    Mock implementation of create_crew_with_flow that returns a fixed CrewPlan.
-    """
-    print(f"Creating crew for task: {user_task}")
-    print(f"Config: {config}")
-    
-    return MockFlowClass().kickoff()
+import sys
+from src.agent_creator.flow.multi_crew_flow import MultiCrewFlow, create_crew_with_flow
+from src.agent_creator.crews.models import CrewPlan
 
 def test_flow():
-    """Test the flow implementation with a mock."""
-    task = "Create a customer service chatbot that handles product inquiries and returns"
+    """Test the flow-based crew creation."""
+    print("Testing MultiCrewFlow...")
+    
+    # Create test config
     config = {
-        "model_name": "gpt-4o",
-        "temperature": 0.7
+        "domain": "Retail Catalog",
+        "process_areas": ["Item-Setup"],
+        "problem_context": "Retail merchandising team needs to efficiently plan, schedule, and coordinate seasonal product introductions across multiple departments and sales channels",
+        "input_context": "Seasonal calendars, historical performance data, vendor lead times, and departmental capacity constraints",
+        "output_context": "Optimized seasonal merchandise plan with introduction timelines, promotional schedules, and resource allocation recommendations",
+        "constraints": ["Must account for 30+ merchandise departments", "Must integrate with existing inventory systems", "Should provide at least 6-month planning horizon"]
     }
     
-    # Just use the mock implementation for now
-    print("Using mock implementation...")
-    crew_plan = create_crew_with_flow_mock(task, config)
+    # Test the flow
+    task = "Create a seasonal merchandise planning system for retail catalog management"
     
-    # Print the result
-    print("\nCreated Crew Plan:")
-    print(f"Process: {crew_plan.process}")
-    print(f"Agents: {len(crew_plan.agents)}")
-    for i, agent in enumerate(crew_plan.agents):
-        print(f"\nAgent {i+1}: {agent.name}")
-        print(f"Role: {agent.role}")
-        print(f"Goal: {agent.goal}")
+    # Get flow metadata
+    flow = MultiCrewFlow(user_task=task, config=config)
+    print(f"Flow start methods: {flow._start_methods}")
+    print(f"Flow listeners: {flow._listeners}")
     
-    print(f"\nTasks: {len(crew_plan.tasks)}")
-    for i, task in enumerate(crew_plan.tasks):
-        print(f"\nTask {i+1}: {task.name}")
-        print(f"Purpose: {task.purpose}")
-        print(f"Dependencies: {task.dependencies}")
+    print("\nRunning create_crew_with_flow...")
+    result = create_crew_with_flow(task, config)
     
-    # This is what would be stored in the API response
-    api_response = {
-        "status": "success",
-        "crew_id": 12345,  # This would normally be generated by the database
-        "agents": [agent.__dict__() for agent in crew_plan.agents],
-        "tasks": [task.__dict__() for task in crew_plan.tasks],
-        "process": crew_plan.process
-    }
+    # Check result
+    print(f"\nResult type: {type(result)}")
+    if isinstance(result, CrewPlan):
+        print(f"Crew name: {result.name}")
+        print(f"Agents: {len(result.agents)}")
+        print(f"Tasks: {len(result.tasks)}")
+        
+        # Print agent names
+        print("\nAgents:")
+        for agent in result.agents:
+            print(f"- {agent.name}: {agent.role}")
+        
+        # Print task names
+        print("\nTasks:")
+        for task in result.tasks:
+            print(f"- {task.name}: {task.assigned_to}")
+    else:
+        print(f"Result is not a CrewPlan: {result}")
     
-    print("\nAPI Response (JSON):")
-    print(json.dumps(api_response, indent=2))
-    
-    # Return the crew plan for further testing
-    return crew_plan
+    return result
 
 if __name__ == "__main__":
     test_flow()

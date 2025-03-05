@@ -91,6 +91,12 @@ const FlowCreator: React.FC = () => {
   const [debugMode, setDebugMode] = useState(false);
   const [statusMessages, setStatusMessages] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [isClient, setIsClient] = useState(false);
+  
+  // Set isClient to true once component mounts on the client
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
 
   // Simulate the flow process and update the active step
   const simulateFlowProcess = () => {
@@ -187,7 +193,7 @@ const FlowCreator: React.FC = () => {
 
   return (
     <Layout>
-      <Box className="animate-fadeIn">
+      <Box className={isClient ? "animate-fadeIn" : ""}>
         <Grid container spacing={4}>
           <Grid item xs={12} md={6}>
             <Box sx={{ mb: 4 }}>
@@ -201,7 +207,7 @@ const FlowCreator: React.FC = () => {
               </Typography>
             </Box>
             
-            <Card className="card animate-slideInUp" variant="outlined">
+            <Card className={`card ${isClient ? "animate-slideInUp" : ""}`} variant="outlined">
               <CardContent sx={{ p: 3 }}>
                 {error && (
                   <Alert severity="error" sx={{ mb: 3 }}>
@@ -334,7 +340,7 @@ const FlowCreator: React.FC = () => {
                         maxHeight: 200
                       }}
                     >
-                      {statusMessages.map((message, index) => (
+                      {isClient && statusMessages.map((message, index) => (
                         <Box key={index} sx={{ mb: 1 }}>
                           {message}
                         </Box>

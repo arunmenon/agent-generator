@@ -14,13 +14,15 @@ const Layout: React.FC<{children: React.ReactNode}> = ({children}) => {
       <AppBar position="static" color="primary" elevation={0} className="gradient-bg">
         <Toolbar>
           <Box display="flex" alignItems="center">
-            <Link href="/" passHref>
-              <Box component="a" display="flex" alignItems="center" sx={{ textDecoration: 'none', color: 'white' }}>
-                {/* Placeholder for logo */}
-                <Typography variant="h5" sx={{ fontWeight: 600, marginLeft: 1 }}>
-                  Agent Creator
-                </Typography>
-              </Box>
+            <Link href="/" passHref legacyBehavior>
+              <a style={{ textDecoration: 'none', color: 'white' }}>
+                <Box display="flex" alignItems="center">
+                  {/* Placeholder for logo */}
+                  <Typography variant="h5" sx={{ fontWeight: 600, marginLeft: 1 }}>
+                    Agent Creator
+                  </Typography>
+                </Box>
+              </a>
             </Link>
           </Box>
           

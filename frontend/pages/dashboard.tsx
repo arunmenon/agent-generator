@@ -1,17 +1,22 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import Layout from '../src/components/Layout';
 import { Typography, Table, TableHead, TableRow, TableCell, TableBody, Paper, TableContainer } from '@mui/material';
 import Link from 'next/link';
 import { useCrews } from '../src/lib/queries';
 
 const Dashboard: React.FC = () => {
+  const [isClient, setIsClient] = useState(false);
   const {data: crews, isLoading} = useCrews();
+  
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
 
   return (
     <Layout>
       <Typography variant="h4" gutterBottom>Dashboard</Typography>
       {isLoading && <Typography>Loading...</Typography>}
-      {crews && crews.length > 0 ? (
+      {isClient && crews && crews.length > 0 ? (
         <TableContainer component={Paper}>
           <Table>
             <TableHead>
@@ -25,8 +30,10 @@ const Dashboard: React.FC = () => {
               {crews.map((crew: any) => (
                 <TableRow key={crew.crew_id} hover>
                   <TableCell>
-                    <Link href={`/crew/${crew.crew_id}`} style={{textDecoration: 'none', color: 'blue'}}>
-                      {crew.crew_name}
+                    <Link href={`/crew/${crew.crew_id}`} passHref legacyBehavior>
+                      <a style={{textDecoration: 'none', color: 'blue'}}>
+                        {crew.crew_name}
+                      </a>
                     </Link>
                   </TableCell>
                   <TableCell>{crew.process}</TableCell>

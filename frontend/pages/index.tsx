@@ -38,6 +38,12 @@ const Home: React.FC = () => {
 
   const [loading, setLoading] = useState(false);
   const [thoughts, setThoughts] = useState<string[]>([]);
+  const [isClient, setIsClient] = useState(false);
+  
+  // Set isClient to true once component mounts on the client
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
 
   const handleAddTool = () => {
     if (toolInput.trim() && !tools.includes(toolInput.trim())) {
@@ -259,18 +265,20 @@ const Home: React.FC = () => {
               Please wait as we carefully structure each step and assign agents accordingly. Your instructions are being transformed into a custom crew configuration.
             </Typography>
 
-            <Box
-              mt={2}
-              p={2}
-              bgcolor="#f5f5f5"
-              width="100%"
-              borderRadius={2}
-              sx={{maxHeight: 150, overflowY: 'auto'}}
-            >
-              {thoughts.map((t, i) => (
-                <Typography variant="body2" key={i}>{t}</Typography>
-              ))}
-            </Box>
+            {isClient && (
+              <Box
+                mt={2}
+                p={2}
+                bgcolor="#f5f5f5"
+                width="100%"
+                borderRadius={2}
+                sx={{maxHeight: 150, overflowY: 'auto'}}
+              >
+                {thoughts.map((t, i) => (
+                  <Typography variant="body2" key={i}>{t}</Typography>
+                ))}
+              </Box>
+            )}
           </Box>
         </DialogContent>
         <DialogActions>

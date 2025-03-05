@@ -2,8 +2,32 @@
 
 from typing import Any, Dict, List, Optional, Union
 from pydantic import BaseModel, Field
-from crewai import Agent, Crew, Process, Task, LLM
-from crewai.project import CrewBase, agent, task, crew, before_kickoff
+try:
+    from crewai import Agent, Crew, Process, Task, LLM
+except ImportError:
+    # Mock classes for when crewai is not installed
+    class Agent: pass
+    class Crew: pass
+    class Process: pass
+    class Task: pass
+    class LLM: pass
+try:
+    from crewai.project import CrewBase, agent, task, crew, before_kickoff
+except ImportError:
+    # Mock decorators for when crewai is not installed
+    def agent(*args, **kwargs): 
+        def decorator(func): return func
+        return decorator
+    def task(*args, **kwargs): 
+        def decorator(func): return func
+        return decorator
+    def crew(*args, **kwargs): 
+        def decorator(func): return func
+        return decorator
+    def before_kickoff(*args, **kwargs): 
+        def decorator(func): return func
+        return decorator
+    class CrewBase: pass
 
 class CrewConfig(BaseModel):
     crew: Dict[str, Any]

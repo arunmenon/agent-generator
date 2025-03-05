@@ -3,7 +3,7 @@ Analysis Crew implementation for user task analysis.
 """
 
 from crewai import Crew, Process
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 import json
 import logging
 

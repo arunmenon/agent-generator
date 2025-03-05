@@ -20,5 +20,5 @@ fi
 export PYTHONPATH="$(pwd):$PYTHONPATH"
 
 # Run the API server
-echo "Starting Agent Generator API server on port 8000..."
-python api.py
+echo "Starting replacement API server on port 8000..."
+python replacement_api.py

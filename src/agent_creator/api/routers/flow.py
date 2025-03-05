@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException, Query, Body
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 import sqlite3
 import os
 import json
@@ -13,18 +13,23 @@ DB_PATH = os.environ.get("DB_PATH", "crews.db")
 router = APIRouter()
 
 @router.post("/create", response_model=Dict[str, Any])
-def create_crew_with_flow_api(
-    task: str,
-    domain: str,
-    problem_context: str,
-    input_context: str,
-    output_context: str,
-    process_areas: Optional[List[str]] = Query(None, description="Specific process areas within the domain"),
-    constraints: Optional[List[str]] = Query(None, description="Limitations or requirements that must be followed"),
-    model_name: Optional[str] = Query("gpt-4o", description="The LLM to use"),
-    temperature: Optional[float] = Query(0.7, description="LLM temperature parameter")
-):
+async def create_crew_with_flow_api(request_data: Dict[str, Any] = Body(...)):
     """Create a new crew configuration using the Flow-based approach."""
+    # Extract values from the request body
+    task = request_data.get("task")
+    domain = request_data.get("domain") 
+    problem_context = request_data.get("problem_context")
+    input_context = request_data.get("input_context")
+    output_context = request_data.get("output_context")
+    process_areas = request_data.get("process_areas", [])
+    constraints = request_data.get("constraints", [])
+    model_name = request_data.get("model_name", "gpt-4o")
+    temperature = request_data.get("temperature", 0.7)
+    
+    # Validate required fields
+    if not all([task, domain, problem_context, input_context, output_context]):
+        raise HTTPException(status_code=422, detail="Missing required fields")
+        
     config = {
         "model_name": model_name,
         "temperature": temperature,
@@ -119,18 +124,23 @@ def create_crew_with_flow_api(
         raise HTTPException(status_code=500, detail=f"Error creating crew: {str(e)}")
 
 @router.post("/debug", response_model=Dict[str, Any])
-def debug_crew_flow(
-    task: str = Body(..., embed=True),
-    domain: str = Body(..., embed=True),
-    problem_context: str = Body(..., embed=True),
-    input_context: str = Body(..., embed=True),
-    output_context: str = Body(..., embed=True),
-    process_areas: List[str] = Body([], embed=True),
-    constraints: List[str] = Body([], embed=True),
-    model_name: str = Body("gpt-4o", embed=True),
-    temperature: float = Body(0.7, embed=True)
-):
+async def debug_crew_flow(request_data: Dict[str, Any] = Body(...)):
     """Debug endpoint that returns the full analysis process without saving to the database."""
+    # Extract values from the request body
+    task = request_data.get("task")
+    domain = request_data.get("domain") 
+    problem_context = request_data.get("problem_context")
+    input_context = request_data.get("input_context")
+    output_context = request_data.get("output_context")
+    process_areas = request_data.get("process_areas", [])
+    constraints = request_data.get("constraints", [])
+    model_name = request_data.get("model_name", "gpt-4o")
+    temperature = request_data.get("temperature", 0.7)
+    
+    # Validate required fields
+    if not all([task, domain, problem_context, input_context, output_context]):
+        raise HTTPException(status_code=422, detail="Missing required fields")
+        
     config = {
         "model_name": model_name,
         "temperature": temperature,
@@ -147,8 +157,19 @@ def debug_crew_flow(
         time.sleep(2)
         
         # Initialize the flow
-        flow = MultiCrewFlow(user_task=task, config=config)
-        result = flow.kickoff()
+        print("[DEBUG] Initializing MultiCrewFlow with kickoff()")
+        try:
+            flow = MultiCrewFlow(user_task=task, config=config)
+            # The real CrewAI Flow implementation uses kickoff() method, but we may need to catch errors
+            # if the Flow implementation isn't fully compatible
+            result = flow.kickoff()
+            print(f"[DEBUG] Flow kickoff complete, result type: {type(result)}")
+        except AttributeError as e:
+            print(f"[DEBUG] Flow kickoff error: {str(e)}")
+            # Fallback to manual execution
+            flow = MultiCrewFlow(user_task=task, config=config)
+            result = flow.run_analysis_crew()
+            print(f"[DEBUG] Fallback execution complete, result type: {type(result)}")
         
         # Create a mock analysis result
         mock_analysis = {

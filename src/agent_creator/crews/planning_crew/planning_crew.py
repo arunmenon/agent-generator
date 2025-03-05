@@ -30,13 +30,10 @@ class PlanningCrew:
         api_key = self.config.get("api_key", os.environ.get("OPENAI_API_KEY"))
         
         try:
+            # LiteLLM client has issues with provider and streaming parameters
             return LLM(
-                provider="openai",
-                base_url=self.config.get("api_base", None),
-                api_key=api_key,
                 model=self.config.get("model_name", "gpt-4o"),
-                temperature=self.config.get("temperature", 0.7),
-                streaming=False
+                temperature=self.config.get("temperature", 0.7)
             )
         except Exception as e:
             print(f"Error initializing LLM: {str(e)}")
@@ -63,38 +60,63 @@ class PlanningCrew:
             manager_llm=self.llm
         )
         
-    def plan(self, user_task: str, analysis_result: AnalysisOutput) -> PlanningOutput:
+    def plan(self, user_task: str, analysis_result: Dict[str, Any]) -> PlanningOutput:
         """
         Generate plans based on user task and analysis.
         
         Args:
             user_task: The user's task description
-            analysis_result: Results from the Analysis Crew as AnalysisOutput
+            analysis_result: Results from the Analysis Crew (as dictionary)
             
         Returns:
             PlanningOutput containing planning results
         """
-        # Extract domain context from analysis result
-        domain = analysis_result.domain
-        process_areas = analysis_result.process_areas
-        problem_context = analysis_result.problem_context
-        input_context = analysis_result.input_context
-        output_context = analysis_result.output_context
-        constraints = analysis_result.constraints
-        
-        # Run the crew with user task, analysis, and domain context as input
-        result = self.crew().kickoff(
-            inputs={
-                "user_task": user_task,
-                "analysis_result": analysis_result,  # Pass Pydantic object directly
-                "domain": domain,
-                "process_areas": process_areas,
-                "problem_context": problem_context,
-                "input_context": input_context,
-                "output_context": output_context,
-                "constraints": constraints
-            }
-        )
+        # Handle case where analysis_result might be a dict or an object
+        try:
+            # Extract domain context from analysis result
+            if isinstance(analysis_result, dict):
+                domain = analysis_result.get('domain', '')
+                process_areas = analysis_result.get('process_areas', [])
+                problem_context = analysis_result.get('problem_context', '')
+                input_context = analysis_result.get('input_context', '')
+                output_context = analysis_result.get('output_context', '')
+                constraints = analysis_result.get('constraints', [])
+            else:
+                # If somehow we still get an object
+                domain = getattr(analysis_result, 'domain', '')
+                process_areas = getattr(analysis_result, 'process_areas', [])
+                problem_context = getattr(analysis_result, 'problem_context', '')
+                input_context = getattr(analysis_result, 'input_context', '')
+                output_context = getattr(analysis_result, 'output_context', '')
+                constraints = getattr(analysis_result, 'constraints', [])
+            
+            # Run the crew with user task, analysis, and domain context as input
+            result = self.crew().kickoff(
+                inputs={
+                    "user_task": user_task,
+                    "analysis_result": analysis_result,  # Pass the dictionary
+                    "domain": domain,
+                    "process_areas": process_areas,
+                    "problem_context": problem_context,
+                    "input_context": input_context,
+                    "output_context": output_context,
+                    "constraints": constraints
+                }
+            )
+        except Exception as e:
+            print(f"Error extracting analysis data: {str(e)}")
+            # Fallback to just using the user task
+            result = self.crew().kickoff(
+                inputs={
+                    "user_task": user_task,
+                    "domain": "",
+                    "process_areas": [],
+                    "problem_context": "",
+                    "input_context": "",
+                    "output_context": "",
+                    "constraints": []
+                }
+            )
         
         # Extract the planning data, handling both string and dict formats
         if isinstance(result.raw, str):
