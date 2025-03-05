@@ -4,7 +4,7 @@ import sys
 
 def test_flow_api(task, debug=False):
     """Test the flow API endpoint."""
-    base_url = "http://localhost:8000"
+    base_url = "http://localhost:8001"
     
     if debug:
         endpoint = f"{base_url}/flow/debug"
