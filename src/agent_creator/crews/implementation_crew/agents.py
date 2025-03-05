@@ -3,10 +3,9 @@ Agent definitions for the Implementation Crew.
 """
 
 from crewai import Agent
-from langchain.chat_models import ChatOpenAI
-from typing import List
+from typing import List, Any
 
-def create_agents(llm: ChatOpenAI) -> List[Agent]:
+def create_agents(llm: Any) -> List[Agent]:
     """
     Create and return the agents for the Implementation Crew.
     

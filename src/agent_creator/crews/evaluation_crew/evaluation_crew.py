@@ -3,7 +3,6 @@ Evaluation Crew for assessing and validating agent crew implementations.
 """
 
 from crewai import Crew, Process
-from langchain.chat_models import ChatOpenAI
 from typing import Dict, Any
 import json
 
@@ -24,7 +23,10 @@ class EvaluationCrew:
         
     def _initialize_llm(self):
         """Initialize the language model with configuration."""
-        return ChatOpenAI(
+        from crewai import LLM
+        
+        return LLM(
+            provider="openai",
             base_url=self.config.get("api_base", None),
             api_key=self.config.get("api_key", None),
             model=self.config.get("model_name", "gpt-4o"),

@@ -6,7 +6,6 @@ import requests
 import argparse
 from typing import Dict, Any
 
-from src.agent_creator.crew import AgentCreator
 from src.agent_creator.flow_crew import MultiCrewFlow, create_crew_with_flow
 
 warnings.filterwarnings("ignore", category=SyntaxWarning, module="pysbd")
@@ -23,44 +22,30 @@ def run():
     inputs = {
         'topic': 'AI LLMs'
     }
-    AgentCreator().crew().kickoff(inputs=inputs)
+    flow = MultiCrewFlow()
+    flow.run("Create a research agent crew that collects and summarizes information about AI LLMs")
 
 
 def train():
     """
     Train the crew for a given number of iterations.
     """
-    inputs = {
-        "topic": "AI LLMs"
-    }
-    try:
-        AgentCreator().crew().train(n_iterations=int(sys.argv[1]), filename=sys.argv[2], inputs=inputs)
-
-    except Exception as e:
-        raise Exception(f"An error occurred while training the crew: {e}")
+    print("Training functionality is not implemented in the flow-based architecture")
+    sys.exit(1)
 
 def replay():
     """
     Replay the crew execution from a specific task.
     """
-    try:
-        AgentCreator().crew().replay(task_id=sys.argv[1])
-
-    except Exception as e:
-        raise Exception(f"An error occurred while replaying the crew: {e}")
+    print("Replay functionality is not implemented in the flow-based architecture")
+    sys.exit(1)
 
 def test():
     """
     Test the crew execution and returns the results.
     """
-    inputs = {
-        "topic": "AI LLMs"
-    }
-    try:
-        AgentCreator().crew().test(n_iterations=int(sys.argv[1]), openai_model_name=sys.argv[2], inputs=inputs)
-
-    except Exception as e:
-        raise Exception(f"An error occurred while replaying the crew: {e}")
+    print("Test functionality is not implemented in the flow-based architecture")
+    sys.exit(1)
 
 def test_flow_direct(task: str, model_name: str = "gpt-4o", temperature: float = 0.7) -> Dict[str, Any]:
     """
@@ -104,7 +89,7 @@ def test_flow_api(task: str, model_name: str = "gpt-4o",
     Returns:
         The API response
     """
-    base_url = "http://localhost:8000"
+    base_url = "http://localhost:8002"
     
     # Determine which endpoint to use
     if debug:

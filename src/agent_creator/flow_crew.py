@@ -139,9 +139,8 @@ class MultiCrewState:
 class MultiCrewFlow:
     """Mock implementation of the flow that orchestrates multiple specialized crews."""
     
-    def __init__(self, user_task: str, config: Dict[str, Any] = None):
-        """Initialize the flow with user task and configuration."""
-        self.user_task = user_task
+    def __init__(self, config: Dict[str, Any] = None):
+        """Initialize the flow with configuration."""
         self.config = config or {}
         self.state = MultiCrewState()
         
@@ -149,9 +148,15 @@ class MultiCrewFlow:
         self.model = self.config.get("model_name", "gpt-4o")
         self.temperature = self.config.get("temperature", 0.7)
     
+    def run(self, user_task: str):
+        """Run the flow process with the given user task."""
+        self.user_task = user_task
+        print(f"Starting Multi-Crew Flow for task: {self.user_task}")
+        return self.kickoff()
+        
     def kickoff(self):
         """Kickoff the flow process with a mock implementation."""
-        print(f"Starting mock Multi-Crew Flow for task: {self.user_task}")
+        print(f"Processing task with Multi-Crew Flow: {self.user_task}")
         
         # Run a simulated flow without real LLM calls
         agents = [
@@ -214,8 +219,8 @@ class MultiCrewFlow:
 
 def create_crew_with_flow(user_task: str, config: Dict[str, Any] = None) -> CrewPlan:
     """Creates a crew plan using the Multi-Crew Flow approach."""
-    flow = MultiCrewFlow(user_task=user_task, config=config or {})
-    result = flow.kickoff()
+    flow = MultiCrewFlow(config=config or {})
+    result = flow.run(user_task)
     
     # Result is the CrewPlan
     return result
